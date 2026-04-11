@@ -81,7 +81,7 @@ async function processLog(link, reply) {
   try {
     const token = await getWCLToken();
 
-    // Passo 1: buscar metadados do report
+    // Passo 1: buscar metadados e playerDetails (para pegar as specs reais)
     const metaQuery = `
     {
       reportData {
@@ -92,6 +92,7 @@ async function processLog(link, reply) {
             name
             kill
           }
+          playerDetails(startTime: 0, endTime: 9999999999)
         }
       }
     }`;
@@ -105,6 +106,23 @@ async function processLog(link, reply) {
     const reportMeta = metaRes.data?.data?.reportData?.report;
     if (!reportMeta) return reply({ content: "❌ report não encontrado" });
 
+    // Mapear specs dos jogadores
+    const playerSpecs = {};
+    const details = reportMeta.playerDetails?.data?.playerDetails;
+    if (details) {
+      // Percorre dps, healers e tanks no playerDetails
+      ["dps", "healers", "tanks"].forEach(role => {
+        if (details[role]) {
+          details[role].forEach(p => {
+            playerSpecs[p.name] = {
+              className: p.type,
+              spec: p.specs?.[0] || "Unknown"
+            };
+          });
+        }
+      });
+    }
+
     const fights = reportMeta.fights || [];
     const boss = fights[0]?.name || "Unknown Boss";
     const kills = fights.filter(f => f.kill).length;
@@ -115,7 +133,7 @@ async function processLog(link, reply) {
     const startTime = 0;
     const endTime = reportEnd - reportStart;
 
-    // Passo 2: buscar tabelas com ícones (que contém spec e classe)
+    // Passo 2: buscar tabelas de performance
     const tableQuery = `
     {
       reportData {
@@ -145,22 +163,17 @@ async function processLog(link, reply) {
 
       return entries
         .map(p => {
-          // p.icon vem no formato "Spec-Classe" (ex: "Retribution-Paladin")
-          // p.type vem como a classe (ex: "Paladin")
-          const iconParts = (p.icon || "").split("-");
-          const spec = iconParts[0] || "Unknown";
-          const className = p.type || "Unknown";
-
+          const info = playerSpecs[p.name] || { className: p.type || "Unknown", spec: "Unknown" };
           return {
             name: p.name || "Unknown",
             total: p.total || 0,
-            className: className,
-            spec: spec
+            className: info.className,
+            spec: info.spec
           };
         })
         .filter(p => p.name !== "Unknown" && p.total > 0)
         .sort((a, b) => b.total - a.total)
-        .slice(0, 10); // Top 10
+        .slice(0, 10);
     };
 
     const dps = extract(report.table);
@@ -170,10 +183,7 @@ async function processLog(link, reply) {
     const format = (arr) =>
       arr.length
         ? arr.map((p, i) => {
-            // Se a spec for igual à classe, tenta limpar ou mostrar apenas uma vez
-            // Mas geralmente o iconParts[0] é a spec real (ex: Frost, Fire, Havoc)
-            const displaySpec = p.spec === p.className ? "N/A" : p.spec;
-            return `**${i + 1}.** ${p.name} (${p.className} - ${displaySpec}) — **${(p.total / 1000).toFixed(1)}k**`;
+            return `**${i + 1}.** ${p.name} (${p.className} - ${p.spec}) — **${(p.total / 1000).toFixed(1)}k**`;
           }).join("\n")
         : "❌ sem dados";
 
