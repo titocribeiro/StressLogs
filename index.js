@@ -9,9 +9,6 @@ const {
 
 const axios = require("axios");
 
-// ===============================
-// CLIENT
-// ===============================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -21,7 +18,7 @@ const client = new Client({
 });
 
 // ===============================
-// WARCRAFT LOGS TOKEN
+// TOKEN WCL
 // ===============================
 async function getWCLToken() {
   const res = await axios.post(
@@ -39,7 +36,7 @@ async function getWCLToken() {
 }
 
 // ===============================
-// WARCRAFT LOGS REPORT
+// REPORT WCL
 // ===============================
 async function getReportData(reportId, token) {
   const query = `
@@ -68,15 +65,14 @@ async function getReportData(reportId, token) {
 }
 
 // ===============================
-// SLASH COMMAND REGISTER (/log)
+// SLASH COMMAND
 // ===============================
 const commands = [
   new SlashCommandBuilder()
     .setName("log")
-    .setDescription("Analisa um log do Warcraft Logs")
+    .setDescription("Analisa log do Warcraft Logs")
     .addStringOption(option =>
-      option
-        .setName("link")
+      option.setName("link")
         .setDescription("Link do report")
         .setRequired(true)
     )
@@ -86,8 +82,6 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
 (async () => {
   try {
-    console.log("Registrando slash command...");
-
     await rest.put(
       Routes.applicationGuildCommands(
         process.env.CLIENT_ID,
@@ -110,14 +104,12 @@ client.once("ready", () => {
 });
 
 // ===============================
-// FUNÇÃO CENTRAL (REUTILIZADA)
+// FUNÇÃO PRINCIPAL
 // ===============================
 async function processLog(link, replyFn) {
   const match = link.match(/warcraftlogs\.com\/reports\/([a-zA-Z0-9]+)/);
 
-  if (!match) {
-    return replyFn("❌ link inválido");
-  }
+  if (!match) return replyFn("❌ link inválido");
 
   const reportId = match[1];
 
@@ -134,7 +126,6 @@ async function processLog(link, replyFn) {
     const wipes = fights.length - kills;
 
     const table = report?.table;
-
     const entries =
       table?.data?.data?.entries ||
       table?.data?.entries ||
@@ -165,7 +156,7 @@ async function processLog(link, replyFn) {
 }
 
 // ===============================
-// SLASH COMMAND (/log)
+// SLASH (/log)
 // ===============================
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
@@ -174,25 +165,26 @@ client.on("interactionCreate", async (interaction) => {
   const link = interaction.options.getString("link");
 
   await interaction.reply("📊 Analisando log...");
-
-  await processLog(link, (msg) =>
-    interaction.editReply(msg)
-  );
+  await processLog(link, (msg) => interaction.editReply(msg));
 });
 
 // ===============================
-// PREFIX COMMAND (!log)
+// PREFIX (!log)
 // ===============================
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  if (!message.content.startsWith("!log")) return;
+  if (message.content.startsWith("!log")) {
+    const link = message.content.replace("!log", "").trim();
+    return processLog(link, (msg) => message.reply(msg));
+  }
 
-  const link = message.content.replace("!log", "").trim();
-
-  await processLog(link, (msg) =>
-    message.reply(msg)
-  );
+  // ===============================
+  // AUTO LINK (SÓ COLAR LINK)
+  // ===============================
+  if (message.content.includes("warcraftlogs.com/reports/")) {
+    return processLog(message.content.trim(), (msg) => message.reply(msg));
+  }
 });
 
 // ===============================
