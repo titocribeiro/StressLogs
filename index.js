@@ -21,7 +21,7 @@ const client = new Client({
 });
 
 // ===============================
-// TOKEN WCL
+// WCL TOKEN
 // ===============================
 async function getWCLToken() {
   const res = await axios.post(
@@ -37,42 +37,6 @@ async function getWCLToken() {
 
   return res.data.access_token;
 }
-
-// ===============================
-// QUERY CORRETA (RANKINGS)
-// ===============================
-async function getReportData(reportId, token) {
-  const query = `
-  {
-    reportData {
-      report(code: "${reportId}") {
-        fights {
-          id
-          name
-          kill
-        }
-
-        rankings(metric: dps)
-      }
-    }
-  }`;
-
-  const res = await axios.post(
-    "https://www.warcraftlogs.com/api/v2/client",
-    { query },
-    {
-      headers: { Authorization: `Bearer ${token}` }
-    }
-  );
-
-  return res.data;
-}
-
-// ===============================
-// MEMÓRIA SIMPLES
-// ===============================
-let logs = [];
-let players = {};
 
 // ===============================
 // SLASH COMMANDS
@@ -118,7 +82,7 @@ client.once("ready", () => {
 });
 
 // ===============================
-// PROCESS LOG (FINAL FIX REAL)
+// PROCESS LOG (VERSÃO FINAL ESTÁVEL)
 // ===============================
 async function processLog(link, replyFn) {
   const match = link.match(/reports\/([a-zA-Z0-9]+)/);
@@ -126,105 +90,102 @@ async function processLog(link, replyFn) {
 
   const reportId = match[1];
 
-  await replyFn("📊 analisando raid...");
+  await replyFn("📊 analisando log...");
 
   try {
     const token = await getWCLToken();
-    const data = await getReportData(reportId, token);
 
-    const report = data?.data?.reportData?.report;
+    const query = `
+    {
+      reportData {
+        report(code: "${reportId}") {
+          fights {
+            name
+            kill
+          }
+
+          table(dataType: DamageDone)
+        }
+      }
+    }`;
+
+    const res = await axios.post(
+      "https://www.warcraftlogs.com/api/v2/client",
+      { query },
+      {
+        headers: { Authorization: `Bearer ${token}` }
+      }
+    );
+
+    const report = res.data?.data?.reportData?.report;
 
     const fights = report?.fights || [];
+
+    const boss = fights.find(f => f.name)?.name || "Unknown Boss";
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.length - kills;
 
-    const boss = fights.find(f => f.name)?.name || "Unknown Boss";
-
     // ===============================
-    // 💥 DPS REAL (RANKINGS FIX)
+    // 💥 DPS PARSER FINAL ESTÁVEL
     // ===============================
-    const rankingData =
-      report?.rankings?.data?.report?.friendlies ||
-      report?.rankings?.data?.friendlies ||
-      report?.rankings?.data ||
+    const entries =
+      report?.table?.data?.entries ||
+      report?.table?.data?.data?.entries ||
       [];
 
-    const normalized = (rankingData || [])
+    const players = entries
       .map(p => ({
         name: p.name || p.character || "Unknown",
-        total: p.total || p.dps || 0
+        total: p.total || p.amount || p.dps || 0
       }))
-      .filter(p => p.name && p.total > 0)
+      .filter(p => p.name !== "Unknown" && p.total > 0)
       .sort((a, b) => b.total - a.total);
 
-    const top5 = normalized.slice(0, 5)
+    const top5 = players.slice(0, 5)
       .map(p => `${p.name} — ${(p.total / 1000).toFixed(1)}k DPS`);
 
-    // ===============================
-    // RAID STATE
-    // ===============================
-    let raidState = "⚖ equilibrado";
-
-    if (wipes > kills * 2) raidState = "🔥 wipe crítico";
-    else if (kills === 0) raidState = "💀 wipe total";
-    else if (wipes < kills) raidState = "📈 progressão boa";
-
-    // ===============================
-    // AVG DPS
-    // ===============================
     const avg =
-      normalized.reduce((a, b) => a + b.total, 0) /
-      (normalized.length || 1);
+      players.reduce((a, b) => a + b.total, 0) /
+      (players.length || 1);
 
-    let dpsState = "normal";
-    if (avg < 3000000) dpsState = "baixo";
-    if (avg > 8000000) dpsState = "alto";
+    let state = "⚖ equilibrado";
+    if (wipes > kills * 2) state = "🔥 wipe crítico";
+    else if (kills === 0) state = "💀 wipe total";
+    else if (wipes < kills) state = "📈 progressão boa";
 
-    // ===============================
-    // SAVE PLAYERS
-    // ===============================
-    normalized.forEach(p => {
-      if (!players[p.name]) {
-        players[p.name] = { total: 0, fights: 0 };
-      }
-
-      players[p.name].total += p.total;
-      players[p.name].fights += 1;
-    });
-
-    logs.push({ boss, reportId });
-
-    const best = normalized[0];
-    const worst = normalized[normalized.length - 1];
+    const best = players[0];
+    const worst = players[players.length - 1];
 
     const embed = new EmbedBuilder()
-      .setTitle("👑 RAID ANALYSIS FINAL FIX")
+      .setTitle("👑 RAID ANALYSIS FINAL STABLE")
       .setColor(0x00ff99)
       .addFields(
         { name: "⚔ Boss", value: boss, inline: true },
         { name: "🔥 Kills", value: String(kills), inline: true },
         { name: "💀 Wipes", value: String(wipes), inline: true },
 
-        { name: "🧠 Estado da Raid", value: raidState },
-        { name: "📊 DPS State", value: dpsState },
+        { name: "🧠 Estado da Raid", value: state },
 
-        { name: "💥 TOP DPS", value: top5.join("\n") || "sem dados" },
+        {
+          name: "💥 TOP DPS",
+          value: top5.join("\n") || "sem dados"
+        },
 
         {
           name: "📋 Resumo",
           value:
             `🔥 Melhor: ${best?.name || "?"}\n` +
             `💀 Pior: ${worst?.name || "?"}\n` +
-            `📊 Players: ${normalized.length}`
+            `📊 Players: ${players.length}`
         }
       )
-      .setFooter({ text: "StressLogs FINAL FIX • Discord Only" });
+      .setFooter({ text: "StressLogs FINAL STABLE • Discord Only" });
 
     return replyFn({ embeds: [embed] });
 
   } catch (err) {
     console.error(err);
-    return replyFn("❌ erro na análise");
+    return replyFn("❌ erro ao analisar log");
   }
 }
 
@@ -240,31 +201,16 @@ client.on("interactionCreate", async (i) => {
   }
 
   if (i.commandName === "ranking") {
-    const ranking = Object.entries(players)
-      .map(([name, d]) => ({
-        name,
-        avg: d.total / d.fights
-      }))
-      .sort((a, b) => b.avg - a.avg)
-      .slice(0, 10)
-      .map(p => `🏆 ${p.name} — ${(p.avg / 1000).toFixed(1)}k`);
-
-    return i.reply({
-      content: "👑 RANKING DA GUILDA:\n\n" + (ranking.join("\n") || "sem dados")
-    });
+    return i.reply("👑 ranking ainda simples (pode evoluir depois)");
   }
 
   if (i.commandName === "lastlogs") {
-    const list = logs.slice(-10).reverse()
-      .map(l => `⚔ ${l.boss}`)
-      .join("\n");
-
-    return i.reply("📜 ÚLTIMOS LOGS:\n\n" + list);
+    return i.reply("📜 logs recentes ainda simples (memória local)");
   }
 });
 
 // ===============================
-// MESSAGE SUPPORT
+// MESSAGE SUPPORT (!log + link direto)
 // ===============================
 client.on("messageCreate", async (m) => {
   if (m.author.bot) return;
