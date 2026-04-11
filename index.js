@@ -170,7 +170,6 @@ async function processLog(link, reply) {
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
     // Passo 2: buscar tabelas de performance
-    // IMPORTANTE: Para buffs, usamos hostilityType: Friend para pegar buffs de aliados
     const tableQuery = `
     {
       reportData {
@@ -179,7 +178,7 @@ async function processLog(link, reply) {
           tableHealing: table(dataType: Healing, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
           tableTank: table(dataType: DamageTaken, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
           tableDeaths: table(dataType: Deaths, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
-          tableBuffs: table(dataType: Buffs, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime}, hostilityType: Friend)
+          tableBuffs: table(dataType: Buffs, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
         }
       }
     }`;
@@ -201,7 +200,7 @@ async function processLog(link, reply) {
     }
 
     // ===============================
-    // CONTAGEM DE CONSUMÍVEIS (v21 - Lógica de Buffs Corrigida)
+    // CONTAGEM DE CONSUMÍVEIS (v22 - Lógica de Buffs Corrigida)
     // ===============================
     const buffsEntries = report.tableBuffs?.data?.entries || [];
     const playersWithFlask = new Set();
