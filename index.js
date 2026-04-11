@@ -110,14 +110,15 @@ async function processLog(link, reply) {
     const playerSpecs = {};
     const details = reportMeta.playerDetails?.data?.playerDetails;
     if (details) {
-      // Percorre dps, healers e tanks no playerDetails
       ["dps", "healers", "tanks"].forEach(role => {
         if (details[role] && Array.isArray(details[role])) {
           details[role].forEach(p => {
-            // Alguns logs podem ter múltiplos specs se o player trocou, pegamos o primeiro
             let specName = "Unknown";
+            // A API retorna specs como uma lista de objetos ou strings
             if (p.specs && p.specs.length > 0) {
-              specName = p.specs[0];
+              const firstSpec = p.specs[0];
+              // Se for um objeto, pega o campo 'spec' ou 'name', se for string, usa direto
+              specName = typeof firstSpec === 'object' ? (firstSpec.spec || firstSpec.name || "Unknown") : firstSpec;
             }
             playerSpecs[p.name] = {
               className: p.type,
@@ -199,7 +200,7 @@ async function processLog(link, reply) {
     const format = (arr) =>
       arr.length
         ? arr.map((p, i) => {
-            const specDisplay = (p.spec && p.spec !== "Unknown") ? p.spec : "N/A";
+            const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
             return `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${(p.total / 1000).toFixed(1)}k**`;
           }).join("\n")
         : "❌ sem dados";
