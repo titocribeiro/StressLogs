@@ -100,6 +100,7 @@ async function processLog(link, reply) {
             startTime
             endTime
             fightPercentage
+            keystoneLevel
           }
           playerDetails(startTime: 0, endTime: 9999999999)
         }
@@ -136,6 +137,7 @@ async function processLog(link, reply) {
     const durationSec = durationSecTotal % 60;
     const durationStr = `${durationMin}m ${durationSec}s`;
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
+    const keyLevel = targetFight.keystoneLevel ? ` (+${targetFight.keystoneLevel})` : "";
 
     const playerInfoMap = {};
     const details = reportMeta.playerDetails?.data?.playerDetails;
@@ -260,7 +262,7 @@ async function processLog(link, reply) {
         { name: "⚔ Boss/Dungeon", value: boss, inline: true },
         { name: "⏱ Duração", value: durationStr, inline: true },
         { name: "📉 Status", value: isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`, inline: true },
-        { name: "🎒 Média ilvl", value: `${avgIlvl}`, inline: true },
+        { name: "🎒 Média ilvl", value: `${avgIlvl}${keyLevel}`, inline: true },
         { name: "💥 DPS", value: format(dps) },
         { name: "💚 HEALERS", value: format(heal) },
         { name: "🛡 TANKS", value: format(tank) }
