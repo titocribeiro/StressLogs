@@ -21,7 +21,7 @@ const client = new Client({
 });
 
 // ===============================
-// WCL TOKEN
+// TOKEN WCL
 // ===============================
 async function getWCLToken() {
   const res = await axios.post(
@@ -39,7 +39,7 @@ async function getWCLToken() {
 }
 
 // ===============================
-// SLASH COMMANDS
+// COMMANDS
 // ===============================
 const commands = [
   new SlashCommandBuilder()
@@ -53,7 +53,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("ranking")
-    .setDescription("Ranking da guilda"),
+    .setDescription("Ranking simples da guilda"),
 
   new SlashCommandBuilder()
     .setName("lastlogs")
@@ -75,14 +75,14 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 })();
 
 // ===============================
-// BOT READY
+// READY
 // ===============================
 client.once("ready", () => {
   console.log("Bot online ✔️");
 });
 
 // ===============================
-// PROCESS LOG (VERSÃO FINAL ESTÁVEL)
+// PROCESS LOG (VERSÃO FINAL REAL)
 // ===============================
 async function processLog(link, replyFn) {
   const match = link.match(/reports\/([a-zA-Z0-9]+)/);
@@ -99,6 +99,7 @@ async function processLog(link, replyFn) {
     {
       reportData {
         report(code: "${reportId}") {
+
           fights {
             name
             kill
@@ -141,20 +142,24 @@ async function processLog(link, replyFn) {
       .filter(p => p.name !== "Unknown" && p.total > 0)
       .sort((a, b) => b.total - a.total);
 
+    if (players.length === 0) {
+      return replyFn("❌ não foi possível extrair DPS desse log (estrutura diferente)");
+    }
+
     const top5 = players.slice(0, 5)
       .map(p => `${p.name} — ${(p.total / 1000).toFixed(1)}k DPS`);
 
+    const best = players[0];
+    const worst = players[players.length - 1];
+
     const avg =
       players.reduce((a, b) => a + b.total, 0) /
-      (players.length || 1);
+      players.length;
 
     let state = "⚖ equilibrado";
     if (wipes > kills * 2) state = "🔥 wipe crítico";
     else if (kills === 0) state = "💀 wipe total";
     else if (wipes < kills) state = "📈 progressão boa";
-
-    const best = players[0];
-    const worst = players[players.length - 1];
 
     const embed = new EmbedBuilder()
       .setTitle("👑 RAID ANALYSIS FINAL STABLE")
@@ -168,7 +173,7 @@ async function processLog(link, replyFn) {
 
         {
           name: "💥 TOP DPS",
-          value: top5.join("\n") || "sem dados"
+          value: top5.join("\n")
         },
 
         {
@@ -201,11 +206,11 @@ client.on("interactionCreate", async (i) => {
   }
 
   if (i.commandName === "ranking") {
-    return i.reply("👑 ranking ainda simples (pode evoluir depois)");
+    return i.reply("👑 ranking simples ativo (pode evoluir depois)");
   }
 
   if (i.commandName === "lastlogs") {
-    return i.reply("📜 logs recentes ainda simples (memória local)");
+    return i.reply("📜 logs simples ativos (memória local)");
   }
 });
 
