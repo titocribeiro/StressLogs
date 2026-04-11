@@ -78,7 +78,6 @@ async function processLog(link, reply) {
   const reportId = link.match(/reports\/([a-zA-Z0-9]+)/)?.[1];
   if (!reportId) return reply({ content: "❌ link inválido" });
 
-  // Tenta extrair o fight ID do link (?fight=2 ou &fight=last)
   const fightMatch = link.match(/[?&]fight=(\d+|last)/);
   let fightId = fightMatch ? fightMatch[1] : null;
 
@@ -114,7 +113,6 @@ async function processLog(link, reply) {
     const reportMeta = metaRes.data?.data?.reportData?.report;
     if (!reportMeta) return reply({ content: "❌ report não encontrado" });
 
-    // Determinar qual luta analisar
     const fights = reportMeta.fights || [];
     let targetFight = null;
     if (fightId === "last") {
@@ -122,7 +120,6 @@ async function processLog(link, reply) {
     } else if (fightId) {
       targetFight = fights.find(f => f.id == fightId);
     } else {
-      // Se não especificou, pega a última luta por padrão (geralmente a mais relevante)
       targetFight = fights[fights.length - 1];
     }
 
@@ -136,7 +133,6 @@ async function processLog(link, reply) {
     const durationStr = `${durationMin}m ${durationSec}s`;
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
 
-    // Mapear specs e roles dos jogadores
     const playerInfoMap = {};
     const details = reportMeta.playerDetails?.data?.playerDetails;
     let totalIlvl = 0;
@@ -168,7 +164,7 @@ async function processLog(link, reply) {
 
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
-    // Passo 2: buscar tabelas de performance da luta específica
+    // Passo 2: buscar tabelas de performance
     const tableQuery = `
     {
       reportData {
@@ -191,7 +187,6 @@ async function processLog(link, reply) {
     const report = tableRes.data?.data?.reportData?.report;
     if (!report) return reply({ content: "❌ erro ao buscar tabelas" });
 
-    // Extrair primeira morte
     const deaths = report.tableDeaths?.data?.entries || [];
     let firstDeathStr = "Ninguém morreu! 🎉";
     if (deaths.length > 0) {
@@ -199,8 +194,6 @@ async function processLog(link, reply) {
       firstDeathStr = `💀 **${first.name}** (${first.ability?.name || "Dano desconhecido"})`;
     }
 
-    // Extrair consumíveis (Flasks e Food)
-    // Nota: Simplificado para mostrar quem ESTÁ com buff
     const buffs = report.tableBuffs?.data?.entries || [];
     const hasFlask = buffs.filter(b => b.name.toLowerCase().includes("flask") || b.name.toLowerCase().includes("phial")).length;
     const hasFood = buffs.filter(b => b.name.toLowerCase().includes("well fed") || b.name.toLowerCase().includes("food")).length;
@@ -242,13 +235,27 @@ async function processLog(link, reply) {
     const heal = extract(report.tableHealing, "healers");
     const tank = extract(report.tableTank, "tanks");
 
+    // ===============================
+    // PROGRESS BAR GENERATOR
+    // ===============================
+    const createBar = (current, max) => {
+      const size = 6; // Tamanho da barra (6 blocos)
+      const percentage = max > 0 ? (current / max) : 0;
+      const filled = Math.round(size * percentage);
+      const empty = size - filled;
+      return "█".repeat(filled) + "░".repeat(empty);
+    };
+
     const format = (arr) => {
       if (!arr.length) return "❌ sem dados";
+      const maxVal = arr[0].total; // O primeiro da lista é o máximo
       let result = "";
       for (let i = 0; i < arr.length; i++) {
         const p = arr[i];
         const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
-        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${(p.total / 1000).toFixed(1)}k**\n`;
+        const bar = createBar(p.total, maxVal);
+        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay})\n\`${bar}\` — **${(p.total / 1000).toFixed(1)}k**\n`;
+        
         if ((result + line).length > 1000) {
           result += "... e mais jogadores";
           break;
@@ -264,7 +271,7 @@ async function processLog(link, reply) {
     const embed = new EmbedBuilder()
       .setTitle(`👑 FULL RAID ROSTER — ${boss}`)
       .setURL(link)
-      .setColor(isKill ? "#00FF00" : "#FF0000") // Verde se kill, Vermelho se wipe
+      .setColor(isKill ? "#00FF00" : "#FF0000")
       .addFields(
         { name: "⚔ Boss", value: `${boss} (${isKill ? "KILL" : "WIPE"})`, inline: true },
         { name: "⏱ Duração", value: durationStr, inline: true },
