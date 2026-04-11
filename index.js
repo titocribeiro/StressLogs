@@ -234,14 +234,14 @@ async function processLog(link, reply) {
       return val.toString();
     };
 
-    const format = (arr, label) => {
+    const format = (arr) => {
       if (!arr.length) return "❌ sem dados";
       let result = "";
       for (let i = 0; i < arr.length; i++) {
         const p = arr[i];
         const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
         const perSec = (p.total / durationSecTotal);
-        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${formatValue(p.total)}** (${formatValue(perSec)} ${label})\n`;
+        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${formatValue(p.total)}** (${formatValue(perSec)})\n`;
         
         if ((result + line).length > 1000) {
           result += "... e mais jogadores";
@@ -261,9 +261,9 @@ async function processLog(link, reply) {
         { name: "⏱ Duração", value: durationStr, inline: true },
         { name: "📉 Status", value: isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`, inline: true },
         { name: "🎒 Média ilvl", value: `${avgIlvl}`, inline: true },
-        { name: "💥 DPS", value: format(dps, "DPS") },
-        { name: "💚 HEALERS", value: format(heal, "HPS") },
-        { name: "🛡 TANKS", value: format(tank, "DTPS") }
+        { name: "💥 DPS", value: format(dps) },
+        { name: "💚 HEALERS", value: format(heal) },
+        { name: "🛡 TANKS", value: format(tank) }
       )
       .setFooter({ text: "StressLogs Bot • Warcraft Logs API v2" })
       .setTimestamp();
