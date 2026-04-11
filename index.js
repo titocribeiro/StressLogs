@@ -21,7 +21,7 @@ const client = new Client({
 });
 
 // ===============================
-// TOKEN WCL
+// WCL TOKEN
 // ===============================
 async function getWCLToken() {
   const res = await axios.post(
@@ -74,7 +74,7 @@ client.once("ready", () => {
 });
 
 // ===============================
-// PROCESS LOG (VERSÃO LIMPA E FUNCIONAL)
+// SMART PROCESSOR (AUTO DETECT)
 // ===============================
 async function processLog(link, replyFn) {
   const match = link.match(/reports\/([a-zA-Z0-9]+)/);
@@ -82,23 +82,30 @@ async function processLog(link, replyFn) {
 
   const reportId = match[1];
 
-  await replyFn("📊 analisando log...");
+  const fightIdMatch = link.match(/fight=(\d+)/);
+  const fightId = fightIdMatch ? Number(fightIdMatch[1]) : null;
+
+  await replyFn("📊 analisando log (smart auto detect)...");
 
   try {
     const token = await getWCLToken();
 
-    // 🔥 QUERY SIMPLES E ESTÁVEL
+    // ===============================
+    // QUERY UNIVERSAL
+    // ===============================
     const query = `
     {
       reportData {
         report(code: "${reportId}") {
 
           fights {
+            id
             name
             kill
           }
 
           table(dataType: DamageDone)
+
         }
       }
     }`;
@@ -114,35 +121,60 @@ async function processLog(link, replyFn) {
     const report = res.data?.data?.reportData?.report;
 
     // ===============================
-    // FIGHTS
+    // FIGHTS SMART
     // ===============================
     const fights = report?.fights || [];
 
-    const boss = fights.find(f => f.name)?.name || "Unknown Boss";
+    const fight =
+      fightId !== null
+        ? fights.find(f => f.id === fightId) || fights[0]
+        : fights[0];
+
+    const boss = fight?.name || "Unknown Boss";
+
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.length - kills;
 
     // ===============================
-    // 💥 DPS PARSER SIMPLES (ESTÁVEL)
+    // 💥 DPS SMART PARSER
     // ===============================
-    const entries =
-      report?.table?.data?.entries ||
-      report?.table?.data?.data?.entries ||
+    const table = report?.table;
+
+    const raw =
+      table?.data?.entries ||
+      table?.data?.data?.entries ||
+      table?.data?.series ||
+      table?.series ||
       [];
 
-    const players = entries
-      .map(p => ({
-        name: p.name || p.character || p.label || "Unknown",
-        total: p.total || p.amount || p.dps || p.value || 0
-      }))
+    const players = (raw || [])
+      .map(p => {
+        const name = p.name || p.character || p.label || "Unknown";
+
+        const total =
+          p.total ??
+          p.amount ??
+          p.value ??
+          p.dps ??
+          0;
+
+        return { name, total };
+      })
       .filter(p => p.name !== "Unknown" && p.total > 0)
       .sort((a, b) => b.total - a.total);
 
-    // fallback real
+    // ===============================
+    // FALLBACK FINAL
+    // ===============================
     if (players.length === 0) {
-      return replyFn("❌ esse log não retornou DPS (limitação do report no Warcraft Logs)");
+      return replyFn(
+        "❌ esse report não expôs DPS nessa estrutura (limitação do Warcraft Logs)"
+      );
     }
 
+    // ===============================
+    // TOP DPS
+    // ===============================
     const top5 = players.slice(0, 5)
       .map(p => `${p.name} — ${(p.total / 1000).toFixed(1)}k DPS`);
 
@@ -154,7 +186,7 @@ async function processLog(link, replyFn) {
       players.length;
 
     // ===============================
-    // STATE
+    // RAID STATE ENGINE
     // ===============================
     let state = "⚖ equilibrado";
     if (wipes > kills * 2) state = "🔥 wipe crítico";
@@ -165,7 +197,7 @@ async function processLog(link, replyFn) {
     // EMBED FINAL
     // ===============================
     const embed = new EmbedBuilder()
-      .setTitle("👑 RAID ANALYSIS FINAL (STABLE)")
+      .setTitle("👑 RAID ANALYSIS SMART AUTO")
       .setColor(0x00ff99)
       .addFields(
         { name: "⚔ Boss", value: boss, inline: true },
@@ -188,7 +220,7 @@ async function processLog(link, replyFn) {
             `📈 DPS médio: ${(avg / 1000).toFixed(1)}k`
         }
       )
-      .setFooter({ text: "Discord Only • Stable Reset Version" });
+      .setFooter({ text: "Smart Auto Mode • Stable Parser" });
 
     return replyFn({ embeds: [embed] });
 
