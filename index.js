@@ -10,11 +10,7 @@ const {
 const axios = require("axios");
 
 const client = new Client({
-  intents: [
-    GatewayIntentBits.Guilds,
-    GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+  intents: [GatewayIntentBits.Guilds]
 });
 
 // ===============================
@@ -65,14 +61,15 @@ async function getReportData(reportId, token) {
 }
 
 // ===============================
-// SLASH COMMAND REGISTER
+// SLASH COMMAND
 // ===============================
 const commands = [
   new SlashCommandBuilder()
     .setName("log")
     .setDescription("Analisa um log do Warcraft Logs")
     .addStringOption(option =>
-      option.setName("link")
+      option
+        .setName("link")
         .setDescription("Link do report")
         .setRequired(true)
     )
@@ -80,12 +77,16 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
+// 🔥 AGORA É GUILD COMMAND (ATUALIZA INSTANTÂNEO)
 (async () => {
   try {
-    console.log("Registrando slash command...");
+    console.log("Registrando slash command (GUILD)...");
 
     await rest.put(
-      Routes.applicationCommands(process.env.CLIENT_ID),
+      Routes.applicationGuildCommands(
+        process.env.CLIENT_ID,
+        process.env.GUILD_ID
+      ),
       { body: commands }
     );
 
@@ -103,9 +104,9 @@ client.once("ready", () => {
 });
 
 // ===============================
-// FUNÇÃO DE PROCESSAMENTO
+// PROCESSAR LOG
 // ===============================
-async function processLog(messageOrInteraction, link, replyFn) {
+async function processLog(link, replyFn) {
   const match = link.match(/warcraftlogs\.com\/reports\/([a-zA-Z0-9]+)/);
 
   if (!match) {
@@ -127,7 +128,6 @@ async function processLog(messageOrInteraction, link, replyFn) {
     const wipes = fights.length - kills;
 
     const table = report?.table;
-
     const entries =
       table?.data?.data?.entries ||
       table?.data?.entries ||
@@ -158,7 +158,7 @@ async function processLog(messageOrInteraction, link, replyFn) {
 }
 
 // ===============================
-// SLASH COMMAND (/log)
+// SLASH COMMAND INTERACTION
 // ===============================
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
@@ -166,28 +166,17 @@ client.on("interactionCreate", async (interaction) => {
 
   const link = interaction.options.getString("link");
 
-  await processLog(
-    interaction,
-    link,
-    (response) => interaction.editReply(response).catch(() => interaction.reply(response))
-  );
-});
+  await interaction.reply("📊 Analisando log...");
 
-// ===============================
-// PREFIX COMMAND (!log)
-// ===============================
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
+  try {
+    const replyFn = (msg) => interaction.editReply(msg);
 
-  if (!message.content.startsWith("!log")) return;
+    await processLog(link, replyFn);
 
-  const link = message.content.replace("!log", "").trim();
-
-  await processLog(
-    message,
-    link,
-    (response) => message.reply(response)
-  );
+  } catch (err) {
+    console.error(err);
+    interaction.editReply("❌ erro");
+  }
 });
 
 // ===============================
