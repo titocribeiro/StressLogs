@@ -11,13 +11,13 @@ const {
 const axios = require("axios");
 
 // ===============================
-// CLIENT - DECLARAÇÃO DE INTENTS (CRÍTICO PARA LER LINKS)
+// CLIENT - DECLARAÇÃO DE INTENTS
 // ===============================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent, // ESSENCIAL PARA LER LINKS DIRETOS
+    GatewayIntentBits.MessageContent,
     GatewayIntentBits.DirectMessages
   ],
   partials: [Partials.Channel, Partials.Message]
@@ -152,6 +152,7 @@ async function processLog(link, reply) {
               specName = typeof firstSpec === 'object' ? (firstSpec.spec || firstSpec.name || "Unknown") : firstSpec;
             }
             playerInfoMap[p.name] = {
+              id: p.id,
               className: p.type,
               spec: specName,
               role: role,
@@ -199,7 +200,7 @@ async function processLog(link, reply) {
     }
 
     // ===============================
-    // CONTAGEM CORRETA DE CONSUMÍVEIS (Jogadores Únicos)
+    // CONTAGEM CORRETA DE CONSUMÍVEIS (v18)
     // ===============================
     const buffs = report.tableBuffs?.data?.entries || [];
     const playersWithFlask = new Set();
@@ -207,12 +208,18 @@ async function processLog(link, reply) {
 
     buffs.forEach(b => {
       const name = b.name.toLowerCase();
-      // Verifica se o buff é um Flask/Phial ou Food
-      if (name.includes("flask") || name.includes("phial") || name.includes("frasco")) {
-        playersWithFlask.add(b.name); // No WCL, o campo 'name' na tabela de buffs é o nome do jogador
-      }
-      if (name.includes("well fed") || name.includes("food") || name.includes("comida") || name.includes("alimentado")) {
-        playersWithFood.add(b.name);
+      // No WCL, o campo 'name' na tabela de buffs é o nome do jogador
+      // E o campo 'abilities' contém os buffs que ele tem
+      if (b.abilities && Array.isArray(b.abilities)) {
+        b.abilities.forEach(ability => {
+          const abilityName = ability.name.toLowerCase();
+          if (abilityName.includes("flask") || abilityName.includes("phial") || abilityName.includes("frasco")) {
+            playersWithFlask.add(b.name);
+          }
+          if (abilityName.includes("well fed") || abilityName.includes("food") || abilityName.includes("comida") || abilityName.includes("alimentado")) {
+            playersWithFood.add(b.name);
+          }
+        });
       }
     });
 
@@ -317,7 +324,7 @@ client.on("interactionCreate", async i => {
 });
 
 // ===============================
-// LINK COLADO DIRETO (Prioridade Máxima)
+// LINK COLADO DIRETO
 // ===============================
 client.on("messageCreate", async m => {
   if (m.author.bot) return;
