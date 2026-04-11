@@ -241,7 +241,6 @@ async function processLog(link, reply) {
       for (let i = 0; i < arr.length; i++) {
         const p = arr[i];
         const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
-        // Formato Limpo: 1. Nome (Classe - Spec) — 150.5k
         const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${(p.total / 1000).toFixed(1)}k**\n`;
         
         if ((result + line).length > 1000) {
@@ -297,7 +296,7 @@ client.on("interactionCreate", async i => {
 });
 
 // ===============================
-// LINK COLADO DIRETO
+// LINK COLADO DIRETO (Prioridade)
 // ===============================
 client.on("messageCreate", async m => {
   if (m.author.bot) return;
@@ -309,8 +308,8 @@ client.on("messageCreate", async m => {
   if (!match) return;
 
   try {
-    await m.reply("📊 analisando log...");
-    return processLog(match[0], r => m.reply(r));
+    const loadingMsg = await m.reply("📊 analisando log...");
+    return processLog(match[0], r => loadingMsg.edit(r));
   } catch (e) {
     console.error(e);
     return m.reply("❌ erro ao analisar log");
