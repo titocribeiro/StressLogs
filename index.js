@@ -47,7 +47,7 @@ async function getWCLToken() {
 const commands = [
   new SlashCommandBuilder()
     .setName("log")
-    .setDescription("Analisa log da raid")
+    .setDescription("Analisa log da raid ou dungeon")
     .addStringOption(opt =>
       opt
         .setName("link")
@@ -81,6 +81,7 @@ async function processLog(link, reply) {
   const reportId = link.match(/reports\/([a-zA-Z0-9]+)/)?.[1];
   if (!reportId) return reply({ content: "❌ link inválido" });
 
+  // Suporte a links de M+ que podem ter parâmetros variados
   const fightMatch = link.match(/[?&]fight=(\d+|last)/);
   let fightId = fightMatch ? fightMatch[1] : null;
 
@@ -118,11 +119,14 @@ async function processLog(link, reply) {
 
     const fights = reportMeta.fights || [];
     let targetFight = null;
+    
+    // Lógica para encontrar a luta correta (Raid ou M+)
     if (fightId === "last") {
       targetFight = fights[fights.length - 1];
     } else if (fightId) {
       targetFight = fights.find(f => f.id == fightId);
     } else {
+      // Se não houver fightId, pegamos a última luta (comum em M+ e Raids)
       targetFight = fights[fights.length - 1];
     }
 
@@ -257,9 +261,9 @@ async function processLog(link, reply) {
       .setURL(link)
       .setColor(isKill ? "#00FF00" : "#FF0000")
       .addFields(
-        { name: "⚔ Boss", value: `${boss} (${isKill ? "KILL" : "WIPE"})`, inline: true },
+        { name: "⚔ Boss/Dungeon", value: `${boss} (${isKill ? "KILL/COMPLETE" : "WIPE"})`, inline: true },
         { name: "⏱ Duração", value: durationStr, inline: true },
-        { name: "📉 Status", value: isKill ? "✅ Morto" : `❌ ${wipePercent}`, inline: true },
+        { name: "📉 Status", value: isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`, inline: true },
         { name: "🎒 Média ilvl", value: `${avgIlvl}`, inline: true },
         { name: "💥 DPS", value: format(dps) },
         { name: "💚 HEALERS", value: format(heal) },
@@ -291,13 +295,14 @@ client.on("interactionCreate", async i => {
 });
 
 // ===============================
-// LINK COLADO DIRETO
+// LINK COLADO DIRETO (Detecção Universal: Raid e M+)
 // ===============================
 client.on("messageCreate", async m => {
   if (m.author.bot) return;
 
+  // Regex atualizada para aceitar qualquer link de report, com ou sem parâmetros
   const match = m.content.match(
-    /https:\/\/www\.warcraftlogs\.com\/reports\/[a-zA-Z0-9]+(\?fight=\d+|&fight=\d+|&fight=last)?/
+    /https:\/\/www\.warcraftlogs\.com\/reports\/([a-zA-Z0-9]+)([^\s]*)/
   );
 
   if (!match) return;
