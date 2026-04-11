@@ -11,13 +11,13 @@ const {
 const axios = require("axios");
 
 // ===============================
-// CLIENT - DECLARAÇÃO DE INTENTS
+// CLIENT - DECLARAÇÃO DE INTENTS (CRÍTICO)
 // ===============================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent,
+    GatewayIntentBits.MessageContent, // ESSENCIAL PARA LER LINKS DIRETOS
     GatewayIntentBits.DirectMessages
   ],
   partials: [Partials.Channel, Partials.Message]
@@ -81,14 +81,12 @@ async function processLog(link, reply) {
   const reportId = link.match(/reports\/([a-zA-Z0-9]+)/)?.[1];
   if (!reportId) return reply({ content: "❌ link inválido" });
 
-  // Suporte a links de M+ que podem ter parâmetros variados
   const fightMatch = link.match(/[?&]fight=(\d+|last)/);
   let fightId = fightMatch ? fightMatch[1] : null;
 
   try {
     const token = await getWCLToken();
 
-    // Passo 1: buscar metadados, playerDetails e fights
     const metaQuery = `
     {
       reportData {
@@ -120,13 +118,11 @@ async function processLog(link, reply) {
     const fights = reportMeta.fights || [];
     let targetFight = null;
     
-    // Lógica para encontrar a luta correta (Raid ou M+)
     if (fightId === "last") {
       targetFight = fights[fights.length - 1];
     } else if (fightId) {
       targetFight = fights.find(f => f.id == fightId);
     } else {
-      // Se não houver fightId, pegamos a última luta (comum em M+ e Raids)
       targetFight = fights[fights.length - 1];
     }
 
@@ -140,7 +136,6 @@ async function processLog(link, reply) {
     const durationStr = `${durationMin}m ${durationSec}s`;
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
 
-    // Mapear specs e roles dos jogadores
     const playerInfoMap = {};
     const details = reportMeta.playerDetails?.data?.playerDetails;
     let totalIlvl = 0;
@@ -173,7 +168,6 @@ async function processLog(link, reply) {
 
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
-    // Passo 2: buscar tabelas de performance (Apenas o essencial)
     const fetchTable = async (dataType) => {
       const query = `
       {
@@ -200,9 +194,6 @@ async function processLog(link, reply) {
     const tableHealing = await fetchTable("Healing");
     const tableTank = await fetchTable("DamageTaken");
 
-    // ===============================
-    // GENERIC EXTRACTOR
-    // ===============================
     const extract = (data, targetRole) => {
       const entries = data?.entries || [];
 
@@ -253,9 +244,6 @@ async function processLog(link, reply) {
       return result;
     };
 
-    // ===============================
-    // EMBED RESPONSE
-    // ===============================
     const embed = new EmbedBuilder()
       .setTitle(`👑 FULL RAID ROSTER — ${boss}`)
       .setURL(link)
@@ -295,26 +283,26 @@ client.on("interactionCreate", async i => {
 });
 
 // ===============================
-// LINK COLADO DIRETO (Regex Ultra-Permissiva)
+// LINK COLADO DIRETO (v27 - Detecção Simplificada)
 // ===============================
 client.on("messageCreate", async m => {
   if (m.author.bot) return;
 
-  // Regex ultra-permissiva: captura qualquer coisa que pareça um link de report do WCL
-  const wclRegex = /https:\/\/www\.warcraftlogs\.com\/reports\/[a-zA-Z0-9]+[^\s]*/g;
-  const matches = m.content.match(wclRegex);
+  // Se a mensagem contiver o link do WCL, processa
+  if (m.content.includes("warcraftlogs.com/reports/")) {
+    // Extrai o link completo da mensagem
+    const words = m.content.split(/\s+/);
+    const link = words.find(w => w.includes("warcraftlogs.com/reports/"));
+    
+    if (!link) return;
 
-  if (!matches || matches.length === 0) return;
-
-  // Processa o primeiro link encontrado na mensagem
-  const link = matches[0];
-
-  try {
-    const loadingMsg = await m.reply("📊 analisando log...");
-    return processLog(link, r => loadingMsg.edit(r));
-  } catch (e) {
-    console.error("Erro ao processar link direto:", e);
-    return m.reply("❌ erro ao analisar log");
+    try {
+      const loadingMsg = await m.reply("📊 analisando log...");
+      return processLog(link, r => loadingMsg.edit(r));
+    } catch (e) {
+      console.error("Erro ao processar link direto:", e);
+      return m.reply("❌ erro ao analisar log");
+    }
   }
 });
 
