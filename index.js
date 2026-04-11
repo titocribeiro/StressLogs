@@ -144,12 +144,20 @@ async function processLog(link, reply) {
       const entries = raw?.entries || [];
 
       return entries
-        .map(p => ({
-          name: p.name || "Unknown",
-          total: p.total || 0,
-          type: p.type || "Unknown", // Classe
-          icon: p.icon || "Unknown"  // Spec-Classe
-        }))
+        .map(p => {
+          // p.icon vem no formato "Spec-Classe" (ex: "Retribution-Paladin")
+          // p.type vem como a classe (ex: "Paladin")
+          const iconParts = (p.icon || "").split("-");
+          const spec = iconParts[0] || "Unknown";
+          const className = p.type || "Unknown";
+
+          return {
+            name: p.name || "Unknown",
+            total: p.total || 0,
+            className: className,
+            spec: spec
+          };
+        })
         .filter(p => p.name !== "Unknown" && p.total > 0)
         .sort((a, b) => b.total - a.total)
         .slice(0, 10); // Top 10
@@ -162,12 +170,10 @@ async function processLog(link, reply) {
     const format = (arr) =>
       arr.length
         ? arr.map((p, i) => {
-            // p.icon vem no formato "Spec-Classe" (ex: "Retribution-Paladin")
-            const parts = p.icon.split("-");
-            const spec = parts[0] || "";
-            const className = p.type || "Unknown";
-            
-            return `**${i + 1}.** ${p.name} (${className} - ${spec}) — **${(p.total / 1000).toFixed(1)}k**`;
+            // Se a spec for igual à classe, tenta limpar ou mostrar apenas uma vez
+            // Mas geralmente o iconParts[0] é a spec real (ex: Frost, Fire, Havoc)
+            const displaySpec = p.spec === p.className ? "N/A" : p.spec;
+            return `**${i + 1}.** ${p.name} (${p.className} - ${displaySpec}) — **${(p.total / 1000).toFixed(1)}k**`;
           }).join("\n")
         : "❌ sem dados";
 
