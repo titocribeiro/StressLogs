@@ -1,9 +1,6 @@
 const { Client, GatewayIntentBits } = require("discord.js");
 const axios = require("axios");
 
-// ❌ NÃO precisa de dotenv no Railway
-// require("dotenv").config();
-
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -12,6 +9,9 @@ const client = new Client({
   ]
 });
 
+// ===============================
+// WCL TOKEN
+// ===============================
 async function getWCLToken() {
   const res = await axios.post(
     "https://www.warcraftlogs.com/oauth/token",
@@ -29,6 +29,9 @@ async function getWCLToken() {
   return res.data.access_token;
 }
 
+// ===============================
+// WCL REPORT
+// ===============================
 async function getReportData(reportId, token) {
   const query = `
   {
@@ -56,17 +59,36 @@ async function getReportData(reportId, token) {
   return res.data;
 }
 
+// ===============================
+// BOT ONLINE
+// ===============================
 client.once("ready", () => {
   console.log("Bot online ✔️");
 });
 
+// ===============================
+// COMANDO !log
+// ===============================
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  const match = message.content.match(/warcraftlogs\.com\/reports\/([a-zA-Z0-9]+)/);
-  if (!match) return;
+  if (!message.content.startsWith("!log")) return;
+
+  const link = message.content.replace("!log", "").trim();
+
+  if (!link) {
+    return message.reply("manda o link do Warcraft Logs 🙂");
+  }
+
+  const match = link.match(/warcraftlogs\.com\/reports\/([a-zA-Z0-9]+)/);
+
+  if (!match) {
+    return message.reply("esse link não parece um report válido 😢");
+  }
 
   const reportId = match[1];
+
+  await message.reply("📊 Analisando log...");
 
   try {
     const token = await getWCLToken();
@@ -87,31 +109,41 @@ client.on("messageCreate", async (message) => {
 
     const topDps = entries
       .sort((a, b) => (b.total ?? 0) - (a.total ?? 0))
-      .slice(0, 3)
+      .slice(0, 5)
       .map(p => ({
         name: p.name,
         dps: Math.round((p.total ?? 0) / 1000)
       }));
 
-    let reply =
-`📊 RESUMO DA RAID\n` +
-`Kills: ${kills} | Wipes: ${wipes} | Fights: ${fights.length}\n\n` +
-`💥 TOP DPS\n`;
+    let dpsText = "";
 
     if (topDps.length === 0) {
-      reply += "Sem dados de DPS disponíveis 😢";
+      dpsText = "Sem dados de DPS 😢";
     } else {
       topDps.forEach((p, i) => {
-        reply += `${i + 1}. ${p.name} – ${p.dps}k\n`;
+        dpsText += `\n${i + 1}. ${p.name} — ${p.dps}k DPS`;
       });
     }
 
-    message.reply(reply);
+    message.reply(
+`📊 **RESUMO DO LOG**
+
+🔥 Kills: ${kills}
+💀 Wipes: ${wipes}
+⚔️ Fights: ${fights.length}
+
+💥 **TOP DPS**
+${dpsText}
+`
+    );
 
   } catch (err) {
     console.error(err);
-    message.reply("Erro ao analisar o log 😢");
+    message.reply("deu erro ao analisar o log 😢");
   }
 });
 
+// ===============================
+// LOGIN BOT
+// ===============================
 client.login(process.env.DISCORD_TOKEN);
