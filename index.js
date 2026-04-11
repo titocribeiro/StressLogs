@@ -235,27 +235,14 @@ async function processLog(link, reply) {
     const heal = extract(report.tableHealing, "healers");
     const tank = extract(report.tableTank, "tanks");
 
-    // ===============================
-    // PROGRESS BAR GENERATOR (Compacta)
-    // ===============================
-    const createBar = (current, max) => {
-      const size = 5; // Barra menor para caber na mesma linha
-      const percentage = max > 0 ? (current / max) : 0;
-      const filled = Math.round(size * percentage);
-      const empty = size - filled;
-      return "█".repeat(filled) + "░".repeat(empty);
-    };
-
     const format = (arr) => {
       if (!arr.length) return "❌ sem dados";
-      const maxVal = arr[0].total;
       let result = "";
       for (let i = 0; i < arr.length; i++) {
         const p = arr[i];
         const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
-        const bar = createBar(p.total, maxVal);
-        // Formato: 1. Nome (Classe - Spec) — 150.5k [███░░░]
-        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${(p.total / 1000).toFixed(1)}k** \`${bar}\`\n`;
+        // Formato Limpo: 1. Nome (Classe - Spec) — 150.5k
+        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${(p.total / 1000).toFixed(1)}k**\n`;
         
         if ((result + line).length > 1000) {
           result += "... e mais jogadores";
