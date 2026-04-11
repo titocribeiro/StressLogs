@@ -81,7 +81,7 @@ async function processLog(link, reply) {
   try {
     const token = await getWCLToken();
 
-    // Passo 1: buscar metadados e playerDetails (para pegar as specs reais)
+    // Passo 1: buscar metadados e playerDetails (para pegar as specs e ROLES reais)
     const metaQuery = `
     {
       reportData {
@@ -106,23 +106,22 @@ async function processLog(link, reply) {
     const reportMeta = metaRes.data?.data?.reportData?.report;
     if (!reportMeta) return reply({ content: "❌ report não encontrado" });
 
-    // Mapear specs dos jogadores de forma robusta
-    const playerSpecs = {};
+    // Mapear specs e roles dos jogadores de forma robusta
+    const playerInfoMap = {};
     const details = reportMeta.playerDetails?.data?.playerDetails;
     if (details) {
       ["dps", "healers", "tanks"].forEach(role => {
         if (details[role] && Array.isArray(details[role])) {
           details[role].forEach(p => {
             let specName = "Unknown";
-            // A API retorna specs como uma lista de objetos ou strings
             if (p.specs && p.specs.length > 0) {
               const firstSpec = p.specs[0];
-              // Se for um objeto, pega o campo 'spec' ou 'name', se for string, usa direto
               specName = typeof firstSpec === 'object' ? (firstSpec.spec || firstSpec.name || "Unknown") : firstSpec;
             }
-            playerSpecs[p.name] = {
+            playerInfoMap[p.name] = {
               className: p.type,
-              spec: specName
+              spec: specName,
+              role: role // 'dps', 'healers' ou 'tanks'
             };
           });
         }
@@ -161,19 +160,19 @@ async function processLog(link, reply) {
     if (!report) return reply({ content: "❌ erro ao buscar tabelas" });
 
     // ===============================
-    // GENERIC EXTRACTOR
+    // GENERIC EXTRACTOR COM FILTRO DE ROLE
     // ===============================
-    const extract = (table) => {
+    const extract = (table, targetRole) => {
       const raw = table?.data;
       const entries = raw?.entries || [];
 
       return entries
         .map(p => {
-          const info = playerSpecs[p.name];
+          const info = playerInfoMap[p.name];
           const className = info ? info.className : (p.type || "Unknown");
           let spec = info ? info.spec : "Unknown";
+          const role = info ? info.role : "Unknown";
           
-          // Fallback: se a spec ainda for Unknown ou igual à classe, tenta extrair do icon
           if ((spec === "Unknown" || spec === className) && p.icon) {
             const iconParts = p.icon.split("-");
             if (iconParts[0] && iconParts[0] !== className) {
@@ -185,25 +184,36 @@ async function processLog(link, reply) {
             name: p.name || "Unknown",
             total: p.total || 0,
             className: className,
-            spec: spec
+            spec: spec,
+            role: role
           };
         })
-        .filter(p => p.name !== "Unknown" && p.total > 0)
-        .sort((a, b) => b.total - a.total)
-        .slice(0, 10);
+        // FILTRO: Só entra na lista se a role do log bater com a lista que estamos montando
+        .filter(p => p.name !== "Unknown" && p.total > 0 && p.role === targetRole)
+        .sort((a, b) => b.total - a.total);
     };
 
-    const dps = extract(report.table);
-    const heal = extract(report.tableHealing);
-    const tank = extract(report.tableTank);
+    const dps = extract(report.table, "dps");
+    const heal = extract(report.tableHealing, "healers");
+    const tank = extract(report.tableTank, "tanks");
 
-    const format = (arr) =>
-      arr.length
-        ? arr.map((p, i) => {
-            const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
-            return `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${(p.total / 1000).toFixed(1)}k**`;
-          }).join("\n")
-        : "❌ sem dados";
+    const format = (arr) => {
+      if (!arr.length) return "❌ sem dados";
+      
+      let result = "";
+      for (let i = 0; i < arr.length; i++) {
+        const p = arr[i];
+        const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
+        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${(p.total / 1000).toFixed(1)}k**\n`;
+        
+        if ((result + line).length > 1000) {
+          result += "... e mais jogadores";
+          break;
+        }
+        result += line;
+      }
+      return result;
+    };
 
     // ===============================
     // EMBED RESPONSE
@@ -216,7 +226,7 @@ async function processLog(link, reply) {
         { name: "⚔ Boss", value: boss, inline: true },
         { name: "🔥 Kills", value: `${kills}`, inline: true },
         { name: "💀 Wipes", value: `${wipes}`, inline: true },
-        { name: "💥 DPS (Top 10)", value: format(dps) },
+        { name: "💥 DPS", value: format(dps) },
         { name: "💚 HEALERS", value: format(heal) },
         { name: "🛡 TANKS", value: format(tank) }
       )
