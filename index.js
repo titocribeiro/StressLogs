@@ -140,7 +140,7 @@ async function processLog(link, reply) {
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
 
-    // Lógica de cores dinâmicas
+    // Lógica de cores dinâmicas (v35)
     let embedColor = "#FFFF00"; // Amarelo (Padrão)
     let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
 
@@ -148,8 +148,10 @@ async function processLog(link, reply) {
       // É uma Dungeon Mythic+
       if (!isKill) {
         embedColor = "#FF0000"; // Vermelho (Wipe/Não concluída)
+        statusText = `❌ ${wipePercent}`;
       } else {
-        // Se tiver keystoneTime, significa que foi no tempo
+        // Se keystoneTime for maior que 0, significa que foi no tempo
+        // Se for 0 ou nulo, significa que foi concluída mas fora do tempo
         if (targetFight.keystoneTime && targetFight.keystoneTime > 0) {
           embedColor = "#00FF00"; // Verde (No tempo)
           statusText = "✅ Concluída no Tempo";
@@ -161,6 +163,7 @@ async function processLog(link, reply) {
     } else {
       // É uma Raid
       embedColor = isKill ? "#00FF00" : "#FF0000";
+      statusText = isKill ? "✅ Morto" : `❌ ${wipePercent}`;
     }
 
     const playerInfoMap = {};
