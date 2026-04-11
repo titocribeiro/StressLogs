@@ -9,6 +9,8 @@ const {
 const axios = require("axios");
 
 // ===============================
+// CLIENT
+// ===============================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -17,6 +19,8 @@ const client = new Client({
   ]
 });
 
+// ===============================
+// TOKEN WCL
 // ===============================
 async function getWCLToken() {
   const res = await axios.post(
@@ -34,18 +38,40 @@ async function getWCLToken() {
 }
 
 // ===============================
-// DETECTA TIPO DO REPORT
+// SAFE REGISTER COMMANDS
 // ===============================
-function detectReportType(report) {
-  const hasFights = report?.fights?.length > 0;
-  const hasDamage = (report?.table?.data?.entries || []).length > 0;
+const commands = [
+  new SlashCommandBuilder()
+    .setName("log")
+    .setDescription("Analisa log da raid")
+    .addStringOption(opt =>
+      opt
+        .setName("link")
+        .setDescription("Link do Warcraft Logs")
+        .setRequired(true)
+    )
+].map(c => c.toJSON());
 
-  if (!hasFights) return "INVALID";
-  if (!hasDamage) return "SUMMARY_ONLY";
+const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
-  return "FULL";
-}
+(async () => {
+  try {
+    await rest.put(
+      Routes.applicationGuildCommands(
+        process.env.CLIENT_ID,
+        process.env.GUILD_ID
+      ),
+      { body: commands }
+    );
 
+    console.log("Slash commands OK ✔️");
+  } catch (e) {
+    console.error("Erro slash commands:", e);
+  }
+})();
+
+// ===============================
+// CORE ANALYSIS FUNCTION
 // ===============================
 async function processLog(link, reply) {
   const reportId = link.match(/reports\/([a-zA-Z0-9]+)/)?.[1];
@@ -65,6 +91,8 @@ async function processLog(link, reply) {
           }
 
           table(dataType: DamageDone)
+          tableHealing: table(dataType: Healing)
+          tableTank: table(dataType: DamageTaken)
 
         }
       }
@@ -73,7 +101,11 @@ async function processLog(link, reply) {
     const res = await axios.post(
       "https://www.warcraftlogs.com/api/v2/client",
       { query },
-      { headers: { Authorization: `Bearer ${token}` } }
+      {
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
+      }
     );
 
     const report = res.data?.data?.reportData?.report;
@@ -81,66 +113,67 @@ async function processLog(link, reply) {
     if (!report) return reply("❌ report não encontrado");
 
     // ===============================
-    // DETECÇÃO INTELIGENTE
+    // FIGHTS
     // ===============================
-    const type = detectReportType(report);
-
     const fights = report.fights || [];
+
     const boss = fights[0]?.name || "Unknown Boss";
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.length - kills;
 
     // ===============================
-    // DPS EXTRACTION SEGURA
+    // GENERIC EXTRACTOR
     // ===============================
-    const entries =
-      report?.table?.data?.entries ||
-      report?.table?.data?.data?.entries ||
-      [];
+    const extract = (table) => {
+      const entries =
+        table?.data?.entries ||
+        table?.data?.data?.entries ||
+        [];
 
-    const players = entries
-      .map(p => ({
-        name: p.name,
-        total: p.total || 0
-      }))
-      .filter(p => p.name && p.total > 0)
-      .sort((a, b) => b.total - a.total);
+      return entries
+        .map(p => ({
+          name: p.name || "Unknown",
+          total: p.total || 0
+        }))
+        .filter(p => p.name !== "Unknown" && p.total > 0)
+        .sort((a, b) => b.total - a.total);
+    };
 
     // ===============================
-    // OUTPUT INTELIGENTE
+    // LISTS
     // ===============================
-    let dpsText = "";
+    const dps = extract(report.table);
+    const heal = extract(report.tableHealing);
+    const tank = extract(report.tableTank);
 
-    if (type === "INVALID") {
-      dpsText = "❌ Report inválido ou sem fights";
-    } 
-    else if (type === "SUMMARY_ONLY") {
-      dpsText = "⚠ Esse report é SUMMARY_ONLY (sem DPS detalhado na API)";
-    } 
-    else {
-      dpsText =
-        players.length > 0
-          ? players.slice(0, 10).map(p =>
-              `• ${p.name} — ${(p.total / 1000).toFixed(1)}k`
-            ).join("\n")
-          : "❌ DPS não encontrado";
-    }
+    const format = (arr) =>
+      arr.length
+        ? arr.map(p => `• ${p.name} — ${(p.total / 1000).toFixed(1)}k`).join("\n")
+        : "❌ sem dados";
 
+    // ===============================
+    // RESPONSE
+    // ===============================
     return reply(
-      `👑 SMART RAID ANALYSIS\n\n` +
+      `👑 FULL RAID ROSTER\n\n` +
+
       `⚔ Boss: ${boss}\n` +
       `🔥 Kills: ${kills}\n` +
       `💀 Wipes: ${wipes}\n\n` +
-      `📊 TYPE: ${type}\n\n` +
-      `💥 DPS:\n${dpsText}`
+
+      `💥 DPS (ordenado):\n${format(dps)}\n\n` +
+      `💚 HEALERS (ordenado):\n${format(heal)}\n\n` +
+      `🛡 TANKS (ordenado):\n${format(tank)}`
     );
 
   } catch (e) {
     console.error(e);
-    return reply("❌ erro na API");
+    return reply("❌ erro ao analisar log");
   }
 }
 
+// ===============================
+// SLASH HANDLER
 // ===============================
 client.on("interactionCreate", async i => {
   if (!i.isChatInputCommand()) return;
@@ -154,6 +187,8 @@ client.on("interactionCreate", async i => {
 });
 
 // ===============================
+// LINK COLADO DIRETO
+// ===============================
 client.on("messageCreate", async m => {
   if (m.author.bot) return;
 
@@ -163,8 +198,13 @@ client.on("messageCreate", async m => {
 
   if (!match) return;
 
-  await m.reply("📊 analisando log...");
-  return processLog(match[0], r => m.reply(r));
+  try {
+    await m.reply("📊 analisando log...");
+    return processLog(match[0], r => m.reply(r));
+  } catch (e) {
+    console.error(e);
+    return m.reply("❌ erro ao analisar log");
+  }
 });
 
 // ===============================
