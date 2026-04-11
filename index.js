@@ -101,6 +101,7 @@ async function processLog(link, reply) {
             endTime
             fightPercentage
             keystoneLevel
+            keystoneTime
           }
           playerDetails(startTime: 0, endTime: 9999999999)
         }
@@ -138,6 +139,29 @@ async function processLog(link, reply) {
     const durationStr = `${durationMin}m ${durationSec}s`;
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
+
+    // Lógica de cores dinâmicas
+    let embedColor = "#FFFF00"; // Amarelo (Padrão)
+    let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
+
+    if (keyLevel) {
+      // É uma Dungeon Mythic+
+      if (!isKill) {
+        embedColor = "#FF0000"; // Vermelho (Wipe/Não concluída)
+      } else {
+        // Se tiver keystoneTime, significa que foi no tempo
+        if (targetFight.keystoneTime && targetFight.keystoneTime > 0) {
+          embedColor = "#00FF00"; // Verde (No tempo)
+          statusText = "✅ Concluída no Tempo";
+        } else {
+          embedColor = "#FFFF00"; // Amarelo (Fora do tempo)
+          statusText = "⚠️ Concluída fora do Tempo";
+        }
+      }
+    } else {
+      // É uma Raid
+      embedColor = isKill ? "#00FF00" : "#FF0000";
+    }
 
     const playerInfoMap = {};
     const details = reportMeta.playerDetails?.data?.playerDetails;
@@ -257,11 +281,11 @@ async function processLog(link, reply) {
     const embed = new EmbedBuilder()
       .setTitle(`👑 FULL RAID ROSTER — ${boss}`)
       .setURL(link)
-      .setColor(isKill ? "#00FF00" : "#FF0000")
+      .setColor(embedColor)
       .addFields(
         { name: "⚔ Boss/Dungeon", value: boss, inline: true },
         { name: "⏱ Duração", value: durationStr, inline: true },
-        { name: "📉 Status", value: isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`, inline: true },
+        { name: "📉 Status", value: statusText, inline: true },
         { name: "🎒 Média ilvl", value: `${avgIlvl}`, inline: true }
       );
 
