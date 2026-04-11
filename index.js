@@ -29,7 +29,7 @@ const client = new Client({
 async function getWCLToken() {
   const res = await axios.post(
     "https://www.warcraftlogs.com/oauth/token",
-    new URLSearchParams({ grant_type: "client_credentials" } ),
+    new URLSearchParams({ grant_type: "client_credentials" }),
     {
       auth: {
         username: process.env.WCL_CLIENT_ID,
@@ -110,7 +110,7 @@ async function processLog(link, reply) {
       "https://www.warcraftlogs.com/api/v2/client",
       { query: metaQuery },
       { headers: { Authorization: `Bearer ${token}` } }
-     );
+    );
 
     const reportMeta = metaRes.data?.data?.reportData?.report;
     if (!reportMeta) return reply({ content: "❌ report não encontrado" });
@@ -131,8 +131,9 @@ async function processLog(link, reply) {
     const boss = targetFight.name;
     const isKill = targetFight.kill;
     const fightDurationMs = targetFight.endTime - targetFight.startTime;
-    const durationMin = Math.floor(fightDurationMs / 60000);
-    const durationSec = Math.floor((fightDurationMs % 60000) / 1000);
+    const durationSecTotal = Math.max(1, Math.floor(fightDurationMs / 1000));
+    const durationMin = Math.floor(durationSecTotal / 60);
+    const durationSec = durationSecTotal % 60;
     const durationStr = `${durationMin}m ${durationSec}s`;
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
 
@@ -182,7 +183,7 @@ async function processLog(link, reply) {
           "https://www.warcraftlogs.com/api/v2/client",
           { query },
           { headers: { Authorization: `Bearer ${token}` } }
-         );
+        );
         return res.data?.data?.reportData?.report?.table?.data;
       } catch (e) {
         console.error(`Erro ao buscar tabela ${dataType}:`, e.message);
@@ -227,13 +228,20 @@ async function processLog(link, reply) {
     const heal = extract(tableHealing, "healers");
     const tank = extract(tableTank, "tanks");
 
-    const format = (arr) => {
+    const formatValue = (val) => {
+      if (val >= 1000000) return (val / 1000000).toFixed(1) + "M";
+      if (val >= 1000) return (val / 1000).toFixed(1) + "k";
+      return val.toString();
+    };
+
+    const format = (arr, label) => {
       if (!arr.length) return "❌ sem dados";
       let result = "";
       for (let i = 0; i < arr.length; i++) {
         const p = arr[i];
         const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
-        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${(p.total / 1000).toFixed(1)}k**\n`;
+        const perSec = (p.total / durationSecTotal);
+        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${formatValue(p.total)}** (${formatValue(perSec)} ${label})\n`;
         
         if ((result + line).length > 1000) {
           result += "... e mais jogadores";
@@ -253,9 +261,9 @@ async function processLog(link, reply) {
         { name: "⏱ Duração", value: durationStr, inline: true },
         { name: "📉 Status", value: isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`, inline: true },
         { name: "🎒 Média ilvl", value: `${avgIlvl}`, inline: true },
-        { name: "💥 DPS", value: format(dps) },
-        { name: "💚 HEALERS", value: format(heal) },
-        { name: "🛡 TANKS", value: format(tank) }
+        { name: "💥 DPS", value: format(dps, "DPS") },
+        { name: "💚 HEALERS", value: format(heal, "HPS") },
+        { name: "🛡 TANKS", value: format(tank, "DTPS") }
       )
       .setFooter({ text: "StressLogs Bot • Warcraft Logs API v2" })
       .setTimestamp();
