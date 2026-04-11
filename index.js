@@ -3,7 +3,8 @@ const {
   GatewayIntentBits,
   SlashCommandBuilder,
   REST,
-  Routes
+  Routes,
+  EmbedBuilder
 } = require("discord.js");
 
 const axios = require("axios");
@@ -20,12 +21,31 @@ const client = new Client({
 });
 
 // ===============================
+// CORES DAS CLASSES (HEX)
+// ===============================
+const CLASS_COLORS = {
+  "DeathKnight": "#C41E3A",
+  "DemonHunter": "#A330C9",
+  "Druid": "#FF7C0A",
+  "Evoker": "#33937F",
+  "Hunter": "#AAD372",
+  "Mage": "#3FC7EB",
+  "Monk": "#00FF98",
+  "Paladin": "#F48CBA",
+  "Priest": "#FFFFFF",
+  "Rogue": "#FFF468",
+  "Shaman": "#0070DD",
+  "Warlock": "#8788EE",
+  "Warrior": "#C69B6D"
+};
+
+// ===============================
 // TOKEN WCL
 // ===============================
 async function getWCLToken() {
   const res = await axios.post(
     "https://www.warcraftlogs.com/oauth/token",
-    new URLSearchParams({ grant_type: "client_credentials" } ),
+    new URLSearchParams({ grant_type: "client_credentials" }),
     {
       auth: {
         username: process.env.WCL_CLIENT_ID,
@@ -75,12 +95,12 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 // ===============================
 async function processLog(link, reply) {
   const reportId = link.match(/reports\/([a-zA-Z0-9]+)/)?.[1];
-  if (!reportId) return reply("❌ link inválido");
+  if (!reportId) return reply({ content: "❌ link inválido" });
 
   try {
     const token = await getWCLToken();
 
-    // Passo 1: buscar startTime, endTime e fights do report
+    // Passo 1: buscar metadados do report
     const metaQuery = `
     {
       reportData {
@@ -88,11 +108,8 @@ async function processLog(link, reply) {
           startTime
           endTime
           fights {
-            id
             name
             kill
-            startTime
-            endTime
           }
         }
       }
@@ -102,23 +119,22 @@ async function processLog(link, reply) {
       "https://www.warcraftlogs.com/api/v2/client",
       { query: metaQuery },
       { headers: { Authorization: `Bearer ${token}` } }
-     );
+    );
 
     const reportMeta = metaRes.data?.data?.reportData?.report;
-    if (!reportMeta) return reply("❌ report não encontrado");
+    if (!reportMeta) return reply({ content: "❌ report não encontrado" });
 
     const fights = reportMeta.fights || [];
     const boss = fights[0]?.name || "Unknown Boss";
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.length - kills;
 
-    // Usar o intervalo de tempo completo do report
     const reportStart = reportMeta.startTime;
     const reportEnd = reportMeta.endTime;
     const startTime = 0;
     const endTime = reportEnd - reportStart;
 
-    // Passo 2: buscar tabelas de DPS, Healing e DamageTaken
+    // Passo 2: buscar tabelas com ícones (que contém spec e classe)
     const tableQuery = `
     {
       reportData {
@@ -134,10 +150,10 @@ async function processLog(link, reply) {
       "https://www.warcraftlogs.com/api/v2/client",
       { query: tableQuery },
       { headers: { Authorization: `Bearer ${token}` } }
-     );
+    );
 
     const report = tableRes.data?.data?.reportData?.report;
-    if (!report) return reply("❌ erro ao buscar tabelas");
+    if (!report) return reply({ content: "❌ erro ao buscar tabelas" });
 
     // ===============================
     // GENERIC EXTRACTOR
@@ -149,42 +165,50 @@ async function processLog(link, reply) {
       return entries
         .map(p => ({
           name: p.name || "Unknown",
-          total: p.total || 0
+          total: p.total || 0,
+          type: p.type || "Unknown", // Classe
+          icon: p.icon || "Unknown"  // Spec_Classe
         }))
         .filter(p => p.name !== "Unknown" && p.total > 0)
-        .sort((a, b) => b.total - a.total);
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 10); // Top 10 para não estourar o limite do Discord
     };
 
-    // ===============================
-    // LISTS
-    // ===============================
     const dps = extract(report.table);
     const heal = extract(report.tableHealing);
     const tank = extract(report.tableTank);
 
     const format = (arr) =>
       arr.length
-        ? arr.map((p, i) => `${i + 1}. ${p.name} — ${(p.total / 1000).toFixed(1)}k`).join("\n")
+        ? arr.map((p, i) => {
+            const spec = p.icon.split("-")[0] || "";
+            return `**${i + 1}.** ${p.name} (${spec}) — **${(p.total / 1000).toFixed(1)}k**`;
+          }).join("\n")
         : "❌ sem dados";
 
     // ===============================
-    // RESPONSE
+    // EMBED RESPONSE
     // ===============================
-    return reply(
-      `👑 FULL RAID ROSTER\n\n` +
+    const embed = new EmbedBuilder()
+      .setTitle(`👑 FULL RAID ROSTER — ${boss}`)
+      .setURL(link)
+      .setColor("#FFD700") // Cor dourada padrão
+      .addFields(
+        { name: "⚔ Boss", value: boss, inline: true },
+        { name: "🔥 Kills", value: `${kills}`, inline: true },
+        { name: "💀 Wipes", value: `${wipes}`, inline: true },
+        { name: "💥 DPS (Top 10)", value: format(dps) },
+        { name: "💚 HEALERS", value: format(heal) },
+        { name: "🛡 TANKS", value: format(tank) }
+      )
+      .setFooter({ text: "StressLogs Bot • Warcraft Logs API v2" })
+      .setTimestamp();
 
-      `⚔ Boss: ${boss}\n` +
-      `🔥 Kills: ${kills}\n` +
-      `💀 Wipes: ${wipes}\n\n` +
-
-      `💥 DPS (ordenado):\n${format(dps)}\n\n` +
-      `💚 HEALERS (ordenado):\n${format(heal)}\n\n` +
-      `🛡 TANKS (ordenado):\n${format(tank)}`
-    );
+    return reply({ embeds: [embed] });
 
   } catch (e) {
     console.error(e?.response?.data || e);
-    return reply("❌ erro ao analisar log");
+    return reply({ content: "❌ erro ao analisar log" });
   }
 }
 
@@ -209,7 +233,7 @@ client.on("messageCreate", async m => {
   if (m.author.bot) return;
 
   const match = m.content.match(
-    /https:\/\/www\.warcraftlogs\.com\/reports\/[a-zA-Z0-9]+(\?fight=\d+|&fight=\d+|&fight=last )?/
+    /https:\/\/www\.warcraftlogs\.com\/reports\/[a-zA-Z0-9]+(\?fight=\d+|&fight=\d+|&fight=last)?/
   );
 
   if (!match) return;
