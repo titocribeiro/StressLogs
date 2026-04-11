@@ -101,7 +101,7 @@ async function processLog(link, reply) {
             endTime
             fightPercentage
             keystoneLevel
-            keystoneTime
+            keystoneBonus
           }
           playerDetails(startTime: 0, endTime: 9999999999)
         }
@@ -140,7 +140,7 @@ async function processLog(link, reply) {
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
 
-    // Lógica de cores dinâmicas (v36 - Definitiva)
+    // Lógica de cores dinâmicas (v38 - Universal e Atemporal)
     let embedColor = "#FFFF00"; // Amarelo (Padrão)
     let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
 
@@ -150,9 +150,9 @@ async function processLog(link, reply) {
         embedColor = "#FF0000"; // Vermelho (Wipe/Não concluída)
         statusText = `❌ ${wipePercent}`;
       } else {
-        // Se keystoneTime for maior que 0, significa que foi no tempo
-        // Se for 0 ou nulo, significa que foi concluída mas fora do tempo
-        if (targetFight.keystoneTime && targetFight.keystoneTime > 0) {
+        // Lógica baseada no keystoneBonus (0 = fora do tempo, 1/2/3 = no tempo)
+        // Se keystoneBonus for maior que 0, significa que a chave deu estrelas (no tempo)
+        if (targetFight.keystoneBonus && targetFight.keystoneBonus > 0) {
           embedColor = "#00FF00"; // Verde (No tempo)
           statusText = "✅ Concluída no Tempo";
         } else {
