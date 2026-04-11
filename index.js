@@ -295,21 +295,23 @@ client.on("interactionCreate", async i => {
 });
 
 // ===============================
-// LINK COLADO DIRETO (Detecção Universal: Raid e M+)
+// LINK COLADO DIRETO (Regex Ultra-Permissiva)
 // ===============================
 client.on("messageCreate", async m => {
   if (m.author.bot) return;
 
-  // Regex atualizada para aceitar qualquer link de report, com ou sem parâmetros
-  const match = m.content.match(
-    /https:\/\/www\.warcraftlogs\.com\/reports\/([a-zA-Z0-9]+)([^\s]*)/
-  );
+  // Regex ultra-permissiva: captura qualquer coisa que pareça um link de report do WCL
+  const wclRegex = /https:\/\/www\.warcraftlogs\.com\/reports\/[a-zA-Z0-9]+[^\s]*/g;
+  const matches = m.content.match(wclRegex);
 
-  if (!match) return;
+  if (!matches || matches.length === 0) return;
+
+  // Processa o primeiro link encontrado na mensagem
+  const link = matches[0];
 
   try {
     const loadingMsg = await m.reply("📊 analisando log...");
-    return processLog(match[0], r => loadingMsg.edit(r));
+    return processLog(link, r => loadingMsg.edit(r));
   } catch (e) {
     console.error("Erro ao processar link direto:", e);
     return m.reply("❌ erro ao analisar log");
