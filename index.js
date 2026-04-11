@@ -1,4 +1,12 @@
-const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
+const {
+  Client,
+  GatewayIntentBits,
+  SlashCommandBuilder,
+  REST,
+  Routes,
+  EmbedBuilder
+} = require("discord.js");
+
 const axios = require("axios");
 
 const client = new Client({
@@ -15,9 +23,7 @@ const client = new Client({
 async function getWCLToken() {
   const res = await axios.post(
     "https://www.warcraftlogs.com/oauth/token",
-    new URLSearchParams({
-      grant_type: "client_credentials"
-    }),
+    new URLSearchParams({ grant_type: "client_credentials" }),
     {
       auth: {
         username: process.env.WCL_CLIENT_ID,
@@ -38,7 +44,6 @@ async function getReportData(reportId, token) {
     reportData {
       report(code: "${reportId}") {
         fights {
-          name
           kill
         }
         table(dataType: DamageDone)
@@ -60,6 +65,37 @@ async function getReportData(reportId, token) {
 }
 
 // ===============================
+// SLASH COMMAND REGISTER
+// ===============================
+const commands = [
+  new SlashCommandBuilder()
+    .setName("log")
+    .setDescription("Analisa um log do Warcraft Logs")
+    .addStringOption(option =>
+      option.setName("link")
+        .setDescription("Link do report")
+        .setRequired(true)
+    )
+].map(c => c.toJSON());
+
+const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+
+(async () => {
+  try {
+    console.log("Registrando slash command...");
+
+    await rest.put(
+      Routes.applicationCommands(process.env.CLIENT_ID),
+      { body: commands }
+    );
+
+    console.log("Slash command registrado ✔️");
+  } catch (err) {
+    console.error(err);
+  }
+})();
+
+// ===============================
 // BOT ONLINE
 // ===============================
 client.once("ready", () => {
@@ -67,31 +103,18 @@ client.once("ready", () => {
 });
 
 // ===============================
-// COMANDO !log OU LINK DIRETO
+// FUNÇÃO DE PROCESSAMENTO
 // ===============================
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
-
-  const content = message.content.trim();
-
-  const isCommand = content.startsWith("!log");
-  const isLink = content.includes("warcraftlogs.com/reports/");
-
-  if (!isCommand && !isLink) return;
-
-  const link = isCommand
-    ? content.replace("!log", "").trim()
-    : content.trim();
-
+async function processLog(messageOrInteraction, link, replyFn) {
   const match = link.match(/warcraftlogs\.com\/reports\/([a-zA-Z0-9]+)/);
 
   if (!match) {
-    return message.reply("esse link não parece um report válido 😢");
+    return replyFn("❌ link inválido");
   }
 
   const reportId = match[1];
 
-  await message.reply("📊 Analisando log...");
+  await replyFn("📊 Analisando log...");
 
   try {
     const token = await getWCLToken();
@@ -101,7 +124,7 @@ client.on("messageCreate", async (message) => {
 
     const fights = report?.fights || [];
     const kills = fights.filter(f => f.kill).length;
-    const wipes = fights.filter(f => !f.kill).length;
+    const wipes = fights.length - kills;
 
     const table = report?.table;
 
@@ -113,20 +136,7 @@ client.on("messageCreate", async (message) => {
     const topDps = entries
       .sort((a, b) => (b.total ?? 0) - (a.total ?? 0))
       .slice(0, 5)
-      .map(p => ({
-        name: p.name,
-        dps: Math.round((p.total ?? 0) / 1000)
-      }));
-
-    let dpsText = "";
-
-    if (topDps.length === 0) {
-      dpsText = "Sem dados de DPS 😢";
-    } else {
-      topDps.forEach((p, i) => {
-        dpsText += `\n${i + 1}. ${p.name} — ${p.dps}k DPS`;
-      });
-    }
+      .map(p => `${p.name} — ${Math.round((p.total ?? 0) / 1000)}k`);
 
     const embed = new EmbedBuilder()
       .setTitle("📊 Resumo do Log")
@@ -135,19 +145,52 @@ client.on("messageCreate", async (message) => {
         { name: "🔥 Kills", value: String(kills), inline: true },
         { name: "💀 Wipes", value: String(wipes), inline: true },
         { name: "⚔️ Fights", value: String(fights.length), inline: true },
-        { name: "💥 Top DPS", value: dpsText || "Sem dados 😢" }
+        { name: "💥 Top DPS", value: topDps.join("\n") || "Sem dados" }
       )
-      .setFooter({ text: "StressLogs • Warcraft Logs Parser" });
+      .setFooter({ text: "StressLogs • Warcraft Logs" });
 
-    message.reply({ embeds: [embed] });
+    return replyFn({ embeds: [embed] });
 
   } catch (err) {
     console.error(err);
-    message.reply("deu erro ao analisar o log 😢");
+    return replyFn("❌ erro ao analisar log");
   }
+}
+
+// ===============================
+// SLASH COMMAND (/log)
+// ===============================
+client.on("interactionCreate", async (interaction) => {
+  if (!interaction.isChatInputCommand()) return;
+  if (interaction.commandName !== "log") return;
+
+  const link = interaction.options.getString("link");
+
+  await processLog(
+    interaction,
+    link,
+    (response) => interaction.editReply(response).catch(() => interaction.reply(response))
+  );
 });
 
 // ===============================
-// LOGIN BOT
+// PREFIX COMMAND (!log)
+// ===============================
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
+
+  if (!message.content.startsWith("!log")) return;
+
+  const link = message.content.replace("!log", "").trim();
+
+  await processLog(
+    message,
+    link,
+    (response) => message.reply(response)
+  );
+});
+
+// ===============================
+// LOGIN
 // ===============================
 client.login(process.env.DISCORD_TOKEN);
