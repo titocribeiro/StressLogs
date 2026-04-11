@@ -169,7 +169,7 @@ async function processLog(link, reply) {
 
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
-    // Passo 2: buscar tabelas de performance
+    // Passo 2: buscar tabelas de performance e AURAS (para consumíveis)
     const tableQuery = `
     {
       reportData {
@@ -178,7 +178,8 @@ async function processLog(link, reply) {
           tableHealing: table(dataType: Healing, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
           tableTank: table(dataType: DamageTaken, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
           tableDeaths: table(dataType: Deaths, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
-          tableBuffs: table(dataType: Buffs, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
+          # Usamos auras para pegar buffs que já estavam ativos no início
+          tableAuras: table(dataType: Buffs, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
         }
       }
     }`;
@@ -200,24 +201,23 @@ async function processLog(link, reply) {
     }
 
     // ===============================
-    // CONTAGEM CORRETA DE CONSUMÍVEIS (v18)
+    // CONTAGEM DE CONSUMÍVEIS (v19 - Lógica de Auras)
     // ===============================
-    const buffs = report.tableBuffs?.data?.entries || [];
+    const auras = report.tableAuras?.data?.entries || [];
     const playersWithFlask = new Set();
     const playersWithFood = new Set();
 
-    buffs.forEach(b => {
-      const name = b.name.toLowerCase();
-      // No WCL, o campo 'name' na tabela de buffs é o nome do jogador
-      // E o campo 'abilities' contém os buffs que ele tem
-      if (b.abilities && Array.isArray(b.abilities)) {
-        b.abilities.forEach(ability => {
-          const abilityName = ability.name.toLowerCase();
-          if (abilityName.includes("flask") || abilityName.includes("phial") || abilityName.includes("frasco")) {
-            playersWithFlask.add(b.name);
+    auras.forEach(p => {
+      if (p.abilities && Array.isArray(p.abilities)) {
+        p.abilities.forEach(ability => {
+          const name = ability.name.toLowerCase();
+          // Verifica se o buff é um Flask/Phial ou Food
+          // Incluímos termos em inglês e português para garantir
+          if (name.includes("flask") || name.includes("phial") || name.includes("frasco") || name.includes("fíala")) {
+            playersWithFlask.add(p.name);
           }
-          if (abilityName.includes("well fed") || abilityName.includes("food") || abilityName.includes("comida") || abilityName.includes("alimentado")) {
-            playersWithFood.add(b.name);
+          if (name.includes("well fed") || name.includes("food") || name.includes("comida") || name.includes("alimentado") || name.includes("saciedade")) {
+            playersWithFood.add(p.name);
           }
         });
       }
