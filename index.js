@@ -39,7 +39,7 @@ async function getWCLToken() {
 }
 
 // ===============================
-// WCL REPORT
+// REPORT DATA
 // ===============================
 async function getReportData(reportId, token) {
   const query = `
@@ -67,18 +67,18 @@ async function getReportData(reportId, token) {
 }
 
 // ===============================
-// MEMORY
+// MEMÓRIA LOCAL (SIMPLES)
 // ===============================
 let logs = [];
-let playerStats = {};
+let players = {};
 
 // ===============================
-// SLASH COMMANDS
+// COMMANDS
 // ===============================
 const commands = [
   new SlashCommandBuilder()
     .setName("log")
-    .setDescription("Analisa log do Warcraft Logs")
+    .setDescription("Analisa um log do Warcraft Logs")
     .addStringOption(opt =>
       opt.setName("link")
         .setDescription("Link do report")
@@ -87,11 +87,11 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("ranking")
-    .setDescription("Ranking PRO da guilda"),
+    .setDescription("Ranking da guilda"),
 
   new SlashCommandBuilder()
     .setName("lastlogs")
-    .setDescription("Últimos logs da guilda")
+    .setDescription("Últimos logs analisados")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -105,7 +105,7 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
     { body: commands }
   );
 
-  console.log("Slash commands OK ✔️");
+  console.log("Slash commands registrados ✔️");
 })();
 
 // ===============================
@@ -116,7 +116,7 @@ client.once("ready", () => {
 });
 
 // ===============================
-// PROCESS LOG (PRO VERSION)
+// PROCESS LOG (SUPREMO)
 // ===============================
 async function processLog(link, replyFn) {
   const match = link.match(/reports\/([a-zA-Z0-9]+)/);
@@ -124,7 +124,7 @@ async function processLog(link, replyFn) {
 
   const reportId = match[1];
 
-  await replyFn("📊 analisando combate...");
+  await replyFn("📊 analisando raid...");
 
   try {
     const token = await getWCLToken();
@@ -154,14 +154,14 @@ async function processLog(link, replyFn) {
     // ===============================
     // WIPE ANALYSIS
     // ===============================
-    let wipeAnalysis = "normal";
+    let raidState = "⚖ equilibrado";
 
-    if (wipes > kills) wipeAnalysis = "muitos wipes (provável mecânica)";
-    if (kills === 0) wipeAnalysis = "wipe total";
-    if (kills > wipes) wipeAnalysis = "progressão estável";
+    if (wipes > kills * 2) raidState = "🔥 wipe crítico";
+    else if (kills === 0) raidState = "💀 wipe total";
+    else if (wipes < kills) raidState = "📈 progressão boa";
 
     // ===============================
-    // DPS ANALYSIS
+    // DPS MÉDIO
     // ===============================
     const avg =
       sorted.reduce((a, b) => a + (b.total || 0), 0) /
@@ -172,79 +172,93 @@ async function processLog(link, replyFn) {
     if (avg > 8000000) dpsState = "alto";
 
     // ===============================
-    // SAVE STATS
+    // STATS POR PLAYER
     // ===============================
     sorted.forEach(p => {
-      if (!playerStats[p.name]) {
-        playerStats[p.name] = { total: 0, fights: 0 };
+      if (!players[p.name]) {
+        players[p.name] = { total: 0, fights: 0 };
       }
 
-      playerStats[p.name].total += p.total;
-      playerStats[p.name].fights += 1;
+      players[p.name].total += p.total;
+      players[p.name].fights += 1;
     });
 
     logs.push({ boss, reportId });
 
+    const best = sorted[0];
+    const worst = sorted[sorted.length - 1];
+
     const embed = new EmbedBuilder()
-      .setTitle("📊 RAID ANALYSIS PRO")
+      .setTitle("👑 RAID ANALYSIS SUPREMA")
       .setColor(0x00ff99)
       .addFields(
         { name: "⚔ Boss", value: boss, inline: true },
         { name: "🔥 Kills", value: String(kills), inline: true },
         { name: "💀 Wipes", value: String(wipes), inline: true },
 
-        { name: "🧠 Raid State", value: wipeAnalysis },
+        { name: "🧠 Estado da Raid", value: raidState },
         { name: "📊 DPS State", value: dpsState },
 
-        { name: "💥 Top DPS", value: top5.join("\n") || "sem dados" }
+        { name: "💥 Top DPS", value: top5.join("\n") || "sem dados" },
+
+        {
+          name: "📋 Resumo",
+          value:
+            `🔥 Melhor: ${best?.name || "?"}\n` +
+            `💀 Pior: ${worst?.name || "?"}\n` +
+            `📊 Players: ${sorted.length}`
+        }
       )
-      .setFooter({ text: "StressLogs PRO • Warcraft Logs" });
+      .setFooter({ text: "StressLogs SUPREMO • Discord Only" });
 
     return replyFn({ embeds: [embed] });
 
   } catch (err) {
     console.error(err);
-    return replyFn("❌ erro na análise PRO");
+    return replyFn("❌ erro na análise");
   }
 }
 
 // ===============================
-// COMMAND HANDLER
+// INTERACTIONS
 // ===============================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
 
+  // /log
   if (i.commandName === "log") {
-    await i.reply("📊 analisando...");
+    await i.reply("📊 processando...");
     return processLog(i.options.getString("link"), (m) => i.editReply(m));
   }
 
+  // /ranking
   if (i.commandName === "ranking") {
-    const ranking = Object.entries(playerStats)
+    const ranking = Object.entries(players)
       .map(([name, d]) => ({
         name,
         avg: d.total / d.fights
       }))
       .sort((a, b) => b.avg - a.avg)
       .slice(0, 10)
-      .map(p => `${p.name} — ${(p.avg / 1000).toFixed(1)}k avg`);
+      .map(p => `🏆 ${p.name} — ${(p.avg / 1000).toFixed(1)}k`);
 
     return i.reply({
-      content: "🏆 RANKING PRO:\n\n" + (ranking.join("\n") || "sem dados")
+      content: "👑 RANKING DA GUILDA:\n\n" + (ranking.join("\n") || "sem dados")
     });
   }
 
+  // /lastlogs
   if (i.commandName === "lastlogs") {
     const list = logs.slice(-10).reverse()
       .map(l => `⚔ ${l.boss}`)
       .join("\n");
 
-    return i.reply("📜 Últimos logs:\n\n" + list);
+    return i.reply("📜 ÚLTIMOS LOGS:\n\n" + list);
   }
 });
 
 // ===============================
-// MESSAGE SYSTEM
+// MESSAGE SUPPORT
 // ===============================
 client.on("messageCreate", async (m) => {
   if (m.author.bot) return;
