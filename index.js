@@ -21,22 +21,22 @@ const client = new Client({
 });
 
 // ===============================
-// CORES DAS CLASSES (HEX)
+// EMOJIS POR CLASSE (Discord Default)
 // ===============================
-const CLASS_COLORS = {
-  "DeathKnight": "#C41E3A",
-  "DemonHunter": "#A330C9",
-  "Druid": "#FF7C0A",
-  "Evoker": "#33937F",
-  "Hunter": "#AAD372",
-  "Mage": "#3FC7EB",
-  "Monk": "#00FF98",
-  "Paladin": "#F48CBA",
-  "Priest": "#FFFFFF",
-  "Rogue": "#FFF468",
-  "Shaman": "#0070DD",
-  "Warlock": "#8788EE",
-  "Warrior": "#C69B6D"
+const CLASS_EMOJIS = {
+  "DeathKnight": "🔴",
+  "DemonHunter": "🟣",
+  "Druid": "🟠",
+  "Evoker": "🟢",
+  "Hunter": "🟢",
+  "Mage": "🔵",
+  "Monk": "🟢",
+  "Paladin": "🌸",
+  "Priest": "⚪",
+  "Rogue": "🟡",
+  "Shaman": "🔵",
+  "Warlock": "🟣",
+  "Warrior": "🟤"
 };
 
 // ===============================
@@ -167,11 +167,11 @@ async function processLog(link, reply) {
           name: p.name || "Unknown",
           total: p.total || 0,
           type: p.type || "Unknown", // Classe
-          icon: p.icon || "Unknown"  // Spec_Classe
+          icon: p.icon || "Unknown"  // Spec-Classe
         }))
         .filter(p => p.name !== "Unknown" && p.total > 0)
         .sort((a, b) => b.total - a.total)
-        .slice(0, 10); // Top 10 para não estourar o limite do Discord
+        .slice(0, 10); // Top 10
     };
 
     const dps = extract(report.table);
@@ -181,8 +181,13 @@ async function processLog(link, reply) {
     const format = (arr) =>
       arr.length
         ? arr.map((p, i) => {
-            const spec = p.icon.split("-")[0] || "";
-            return `**${i + 1}.** ${p.name} (${spec}) — **${(p.total / 1000).toFixed(1)}k**`;
+            // p.icon vem no formato "Spec-Classe" (ex: "Retribution-Paladin")
+            const parts = p.icon.split("-");
+            const spec = parts[0] || "";
+            const className = p.type.replace(/\s+/g, ""); // Remove espaços para bater com CLASS_EMOJIS
+            const emoji = CLASS_EMOJIS[className] || "⚔️";
+            
+            return `${emoji} **${i + 1}.** ${p.name} (*${spec}*) — **${(p.total / 1000).toFixed(1)}k**`;
           }).join("\n")
         : "❌ sem dados";
 
@@ -192,7 +197,7 @@ async function processLog(link, reply) {
     const embed = new EmbedBuilder()
       .setTitle(`👑 FULL RAID ROSTER — ${boss}`)
       .setURL(link)
-      .setColor("#FFD700") // Cor dourada padrão
+      .setColor("#FFD700")
       .addFields(
         { name: "⚔ Boss", value: boss, inline: true },
         { name: "🔥 Kills", value: `${kills}`, inline: true },
