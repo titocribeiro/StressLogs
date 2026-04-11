@@ -44,10 +44,10 @@ async function getWCLToken() {
 const commands = [
   new SlashCommandBuilder()
     .setName("log")
-    .setDescription("Analisa log do Warcraft Logs")
+    .setDescription("Análise profissional de log")
     .addStringOption(opt =>
       opt.setName("link")
-        .setDescription("Link do report")
+        .setDescription("Link do Warcraft Logs")
         .setRequired(true)
     )
 ].map(c => c.toJSON());
@@ -70,28 +70,24 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 // READY
 // ===============================
 client.once("ready", () => {
-  console.log("Bot online ✔️");
+  console.log("Mini WCL Bot online ✔️");
 });
 
 // ===============================
-// SMART PROCESSOR (AUTO DETECT)
+// CORE ANALYSIS ENGINE
 // ===============================
 async function processLog(link, replyFn) {
-  const match = link.match(/reports\/([a-zA-Z0-9]+)/);
-  if (!match) return replyFn("❌ link inválido");
+  const reportId = link.match(/reports\/([a-zA-Z0-9]+)/)?.[1];
 
-  const reportId = match[1];
-
-  const fightIdMatch = link.match(/fight=(\d+)/);
-  const fightId = fightIdMatch ? Number(fightIdMatch[1]) : null;
-
-  await replyFn("📊 analisando log (smart auto detect)...");
+  if (!reportId) {
+    return replyFn("❌ link inválido");
+  }
 
   try {
     const token = await getWCLToken();
 
     // ===============================
-    // QUERY UNIVERSAL
+    // QUERY UNIVERSAL (SAFE)
     // ===============================
     const query = `
     {
@@ -120,23 +116,23 @@ async function processLog(link, replyFn) {
 
     const report = res.data?.data?.reportData?.report;
 
+    if (!report) {
+      return replyFn("❌ report não encontrado ou privado");
+    }
+
     // ===============================
-    // FIGHTS SMART
+    // FIGHTS ANALYSIS
     // ===============================
     const fights = report?.fights || [];
 
-    const fight =
-      fightId !== null
-        ? fights.find(f => f.id === fightId) || fights[0]
-        : fights[0];
-
-    const boss = fight?.name || "Unknown Boss";
+    const boss =
+      fights.find(f => f.name)?.name || "Unknown Encounter";
 
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.length - kills;
 
     // ===============================
-    // 💥 DPS SMART PARSER
+    // DPS ENGINE (ROBUSTO)
     // ===============================
     const table = report?.table;
 
@@ -148,96 +144,74 @@ async function processLog(link, replyFn) {
       [];
 
     const players = (raw || [])
-      .map(p => {
-        const name = p.name || p.character || p.label || "Unknown";
-
-        const total =
-          p.total ??
-          p.amount ??
-          p.value ??
-          p.dps ??
-          0;
-
-        return { name, total };
-      })
+      .map(p => ({
+        name: p.name || p.character || p.label || "Unknown",
+        total: p.total ?? p.amount ?? p.value ?? 0
+      }))
       .filter(p => p.name !== "Unknown" && p.total > 0)
       .sort((a, b) => b.total - a.total);
 
     // ===============================
-    // FALLBACK FINAL
+    // SMART FALLBACK ENGINE
     // ===============================
-    if (players.length === 0) {
-      return replyFn(
-        "❌ esse report não expôs DPS nessa estrutura (limitação do Warcraft Logs)"
-      );
+    let dpsBlock = "❌ DPS não disponível neste tipo de report";
+
+    if (players.length > 0) {
+      const top5 = players.slice(0, 5)
+        .map(p => `${p.name} — ${(p.total / 1000).toFixed(1)}k DPS`)
+        .join("\n");
+
+      const best = players[0];
+      const avg =
+        players.reduce((a, b) => a + b.total, 0) / players.length;
+
+      dpsBlock =
+        `💥 TOP DPS:\n${top5}\n\n` +
+        `🔥 Melhor: ${best.name}\n` +
+        `📊 Média: ${(avg / 1000).toFixed(1)}k`;
     }
-
-    // ===============================
-    // TOP DPS
-    // ===============================
-    const top5 = players.slice(0, 5)
-      .map(p => `${p.name} — ${(p.total / 1000).toFixed(1)}k DPS`);
-
-    const best = players[0];
-    const worst = players[players.length - 1];
-
-    const avg =
-      players.reduce((a, b) => a + b.total, 0) /
-      players.length;
 
     // ===============================
     // RAID STATE ENGINE
     // ===============================
     let state = "⚖ equilibrado";
-    if (wipes > kills * 2) state = "🔥 wipe crítico";
-    else if (kills === 0) state = "💀 wipe total";
+
+    if (kills === 0) state = "💀 wipe total";
+    else if (wipes > kills * 2) state = "🔥 wipe crítico";
     else if (wipes < kills) state = "📈 progressão boa";
 
     // ===============================
-    // EMBED FINAL
+    // FINAL RESPONSE (NEVER FAILS)
     // ===============================
     const embed = new EmbedBuilder()
-      .setTitle("👑 RAID ANALYSIS SMART AUTO")
+      .setTitle("👑 MINI WARCRAFT LOGS ANALYSIS")
       .setColor(0x00ff99)
       .addFields(
-        { name: "⚔ Boss", value: boss, inline: true },
+        { name: "⚔ Boss / Encounter", value: boss, inline: false },
         { name: "🔥 Kills", value: String(kills), inline: true },
         { name: "💀 Wipes", value: String(wipes), inline: true },
-
-        { name: "🧠 Estado da Raid", value: state },
-
-        {
-          name: "💥 TOP DPS",
-          value: top5.join("\n")
-        },
-
-        {
-          name: "📋 Resumo",
-          value:
-            `🔥 Melhor: ${best?.name || "?"}\n` +
-            `💀 Pior: ${worst?.name || "?"}\n` +
-            `📊 Players: ${players.length}\n` +
-            `📈 DPS médio: ${(avg / 1000).toFixed(1)}k`
-        }
+        { name: "🧠 Estado", value: state, inline: false },
+        { name: "📊 DPS ANALYSIS", value: dpsBlock, inline: false },
+        { name: "📌 Players Detectados", value: String(players.length), inline: true }
       )
-      .setFooter({ text: "Smart Auto Mode • Stable Parser" });
+      .setFooter({ text: "Pro Mode • Smart Analysis Engine" });
 
     return replyFn({ embeds: [embed] });
 
   } catch (err) {
     console.error(err);
-    return replyFn("❌ erro ao analisar log");
+    return replyFn("❌ erro interno na análise do log");
   }
 }
 
 // ===============================
-// INTERACTION HANDLER
+// INTERACTION HANDLER (NO TIMEOUT ISSUES)
 // ===============================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
 
   if (i.commandName === "log") {
-    await i.reply("📊 processando...");
+    await i.deferReply(); // 🔥 evita "app not responding"
     return processLog(i.options.getString("link"), (m) => i.editReply(m));
   }
 });
