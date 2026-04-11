@@ -21,25 +21,6 @@ const client = new Client({
 });
 
 // ===============================
-// EMOJIS POR CLASSE (Discord Default)
-// ===============================
-const CLASS_EMOJIS = {
-  "DeathKnight": "🔴",
-  "DemonHunter": "🟣",
-  "Druid": "🟠",
-  "Evoker": "🟢",
-  "Hunter": "🟢",
-  "Mage": "🔵",
-  "Monk": "🟢",
-  "Paladin": "🌸",
-  "Priest": "⚪",
-  "Rogue": "🟡",
-  "Shaman": "🔵",
-  "Warlock": "🟣",
-  "Warrior": "🟤"
-};
-
-// ===============================
 // TOKEN WCL
 // ===============================
 async function getWCLToken() {
@@ -184,10 +165,9 @@ async function processLog(link, reply) {
             // p.icon vem no formato "Spec-Classe" (ex: "Retribution-Paladin")
             const parts = p.icon.split("-");
             const spec = parts[0] || "";
-            const className = p.type.replace(/\s+/g, ""); // Remove espaços para bater com CLASS_EMOJIS
-            const emoji = CLASS_EMOJIS[className] || "⚔️";
+            const className = p.type || "Unknown";
             
-            return `${emoji} **${i + 1}.** ${p.name} (*${spec}*) — **${(p.total / 1000).toFixed(1)}k**`;
+            return `**${i + 1}.** ${p.name} (${className} - ${spec}) — **${(p.total / 1000).toFixed(1)}k**`;
           }).join("\n")
         : "❌ sem dados";
 
