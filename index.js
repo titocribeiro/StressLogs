@@ -4,20 +4,23 @@ const {
   SlashCommandBuilder,
   REST,
   Routes,
-  EmbedBuilder
+  EmbedBuilder,
+  Partials
 } = require("discord.js");
 
 const axios = require("axios");
 
 // ===============================
-// CLIENT
+// CLIENT - DECLARAÇÃO DE INTENTS (CRÍTICO PARA LER LINKS)
 // ===============================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
     GatewayIntentBits.GuildMessages,
-    GatewayIntentBits.MessageContent
-  ]
+    GatewayIntentBits.MessageContent, // ESSENCIAL PARA LER LINKS DIRETOS
+    GatewayIntentBits.DirectMessages
+  ],
+  partials: [Partials.Channel, Partials.Message]
 });
 
 // ===============================
@@ -133,6 +136,7 @@ async function processLog(link, reply) {
     const durationStr = `${durationMin}m ${durationSec}s`;
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
 
+    // Mapear specs e roles dos jogadores
     const playerInfoMap = {};
     const details = reportMeta.playerDetails?.data?.playerDetails;
     let totalIlvl = 0;
@@ -194,9 +198,26 @@ async function processLog(link, reply) {
       firstDeathStr = `💀 **${first.name}** (${first.ability?.name || "Dano desconhecido"})`;
     }
 
+    // ===============================
+    // CONTAGEM CORRETA DE CONSUMÍVEIS (Jogadores Únicos)
+    // ===============================
     const buffs = report.tableBuffs?.data?.entries || [];
-    const hasFlask = buffs.filter(b => b.name.toLowerCase().includes("flask") || b.name.toLowerCase().includes("phial")).length;
-    const hasFood = buffs.filter(b => b.name.toLowerCase().includes("well fed") || b.name.toLowerCase().includes("food")).length;
+    const playersWithFlask = new Set();
+    const playersWithFood = new Set();
+
+    buffs.forEach(b => {
+      const name = b.name.toLowerCase();
+      // Verifica se o buff é um Flask/Phial ou Food
+      if (name.includes("flask") || name.includes("phial") || name.includes("frasco")) {
+        playersWithFlask.add(b.name); // No WCL, o campo 'name' na tabela de buffs é o nome do jogador
+      }
+      if (name.includes("well fed") || name.includes("food") || name.includes("comida") || name.includes("alimentado")) {
+        playersWithFood.add(b.name);
+      }
+    });
+
+    const hasFlask = playersWithFlask.size;
+    const hasFood = playersWithFood.size;
 
     // ===============================
     // GENERIC EXTRACTOR
@@ -265,7 +286,7 @@ async function processLog(link, reply) {
         { name: "📉 Status", value: isKill ? "✅ Morto" : `❌ ${wipePercent}`, inline: true },
         { name: "🎒 Média ilvl", value: `${avgIlvl}`, inline: true },
         { name: "💀 Primeira Morte", value: firstDeathStr, inline: true },
-        { name: "🧪 Consumíveis", value: `🧪 Flasks: ${hasFlask} | 🍗 Food: ${hasFood}`, inline: true },
+        { name: "🧪 Consumíveis", value: `🧪 Flasks: ${hasFlask}/${playerCount} | 🍗 Food: ${hasFood}/${playerCount}`, inline: true },
         { name: "💥 DPS", value: format(dps) },
         { name: "💚 HEALERS", value: format(heal) },
         { name: "🛡 TANKS", value: format(tank) }
@@ -301,7 +322,6 @@ client.on("interactionCreate", async i => {
 client.on("messageCreate", async m => {
   if (m.author.bot) return;
 
-  // Regex melhorada para detectar o link em qualquer parte da mensagem
   const match = m.content.match(
     /https:\/\/www\.warcraftlogs\.com\/reports\/[a-zA-Z0-9]+(\?fight=\d+|&fight=\d+|&fight=last)?/
   );
@@ -309,7 +329,6 @@ client.on("messageCreate", async m => {
   if (!match) return;
 
   try {
-    // Responde com carregamento e depois edita para o Embed
     const loadingMsg = await m.reply("📊 analisando log...");
     return processLog(match[0], r => loadingMsg.edit(r));
   } catch (e) {
