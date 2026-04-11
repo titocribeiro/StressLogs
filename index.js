@@ -39,7 +39,7 @@ async function getWCLToken() {
 }
 
 // ===============================
-// REPORT DATA
+// WCL REPORT (FIXED)
 // ===============================
 async function getReportData(reportId, token) {
   const query = `
@@ -47,6 +47,7 @@ async function getReportData(reportId, token) {
     reportData {
       report(code: "${reportId}") {
         fights {
+          id
           name
           kill
         }
@@ -67,7 +68,7 @@ async function getReportData(reportId, token) {
 }
 
 // ===============================
-// MEMÓRIA LOCAL (SIMPLES)
+// MEMÓRIA SIMPLES
 // ===============================
 let logs = [];
 let players = {};
@@ -78,7 +79,7 @@ let players = {};
 const commands = [
   new SlashCommandBuilder()
     .setName("log")
-    .setDescription("Analisa um log do Warcraft Logs")
+    .setDescription("Analisa log do Warcraft Logs")
     .addStringOption(opt =>
       opt.setName("link")
         .setDescription("Link do report")
@@ -109,14 +110,14 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 })();
 
 // ===============================
-// BOT ONLINE
+// READY
 // ===============================
 client.once("ready", () => {
   console.log("Bot online ✔️");
 });
 
 // ===============================
-// PROCESS LOG (SUPREMO)
+// PROCESS LOG (VERSÃO FINAL CORRIGIDA)
 // ===============================
 async function processLog(link, replyFn) {
   const match = link.match(/reports\/([a-zA-Z0-9]+)/);
@@ -136,23 +137,32 @@ async function processLog(link, replyFn) {
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.length - kills;
 
+    // ===============================
+    // 💥 DPS FIX REAL
+    // ===============================
     const table = report?.table;
+
     const entries =
+      table?.data?.data?.playerDetails?.dps ||
+      table?.data?.playerDetails?.dps ||
       table?.data?.data?.entries ||
-      table?.data?.entries ||
       [];
 
-    const sorted = entries
-      .filter(p => p?.name && p?.total)
+    const normalized = entries
+      .map(p => ({
+        name: p.name || p.character || "Unknown",
+        total: p.total || p.amount || 0
+      }))
+      .filter(p => p.name && p.total > 0)
       .sort((a, b) => b.total - a.total);
 
-    const top5 = sorted.slice(0, 5)
+    const top5 = normalized.slice(0, 5)
       .map(p => `${p.name} — ${(p.total / 1000).toFixed(1)}k DPS`);
 
     const boss = fights.find(f => f.name)?.name || "Unknown Boss";
 
     // ===============================
-    // WIPE ANALYSIS
+    // RAID STATE
     // ===============================
     let raidState = "⚖ equilibrado";
 
@@ -161,20 +171,20 @@ async function processLog(link, replyFn) {
     else if (wipes < kills) raidState = "📈 progressão boa";
 
     // ===============================
-    // DPS MÉDIO
+    // AVG DPS
     // ===============================
     const avg =
-      sorted.reduce((a, b) => a + (b.total || 0), 0) /
-      (sorted.length || 1);
+      normalized.reduce((a, b) => a + b.total, 0) /
+      (normalized.length || 1);
 
     let dpsState = "normal";
     if (avg < 3000000) dpsState = "baixo";
     if (avg > 8000000) dpsState = "alto";
 
     // ===============================
-    // STATS POR PLAYER
+    // SAVE PLAYERS
     // ===============================
-    sorted.forEach(p => {
+    normalized.forEach(p => {
       if (!players[p.name]) {
         players[p.name] = { total: 0, fights: 0 };
       }
@@ -185,11 +195,11 @@ async function processLog(link, replyFn) {
 
     logs.push({ boss, reportId });
 
-    const best = sorted[0];
-    const worst = sorted[sorted.length - 1];
+    const best = normalized[0];
+    const worst = normalized[normalized.length - 1];
 
     const embed = new EmbedBuilder()
-      .setTitle("👑 RAID ANALYSIS SUPREMA")
+      .setTitle("👑 RAID ANALYSIS FINAL")
       .setColor(0x00ff99)
       .addFields(
         { name: "⚔ Boss", value: boss, inline: true },
@@ -199,17 +209,17 @@ async function processLog(link, replyFn) {
         { name: "🧠 Estado da Raid", value: raidState },
         { name: "📊 DPS State", value: dpsState },
 
-        { name: "💥 Top DPS", value: top5.join("\n") || "sem dados" },
+        { name: "💥 TOP DPS", value: top5.join("\n") || "sem dados" },
 
         {
           name: "📋 Resumo",
           value:
             `🔥 Melhor: ${best?.name || "?"}\n` +
             `💀 Pior: ${worst?.name || "?"}\n` +
-            `📊 Players: ${sorted.length}`
+            `📊 Players: ${normalized.length}`
         }
       )
-      .setFooter({ text: "StressLogs SUPREMO • Discord Only" });
+      .setFooter({ text: "StressLogs FINAL • Discord Only" });
 
     return replyFn({ embeds: [embed] });
 
@@ -225,13 +235,11 @@ async function processLog(link, replyFn) {
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
 
-  // /log
   if (i.commandName === "log") {
     await i.reply("📊 processando...");
     return processLog(i.options.getString("link"), (m) => i.editReply(m));
   }
 
-  // /ranking
   if (i.commandName === "ranking") {
     const ranking = Object.entries(players)
       .map(([name, d]) => ({
@@ -247,7 +255,6 @@ client.on("interactionCreate", async (i) => {
     });
   }
 
-  // /lastlogs
   if (i.commandName === "lastlogs") {
     const list = logs.slice(-10).reverse()
       .map(l => `⚔ ${l.boss}`)
