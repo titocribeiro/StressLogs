@@ -106,17 +106,22 @@ async function processLog(link, reply) {
     const reportMeta = metaRes.data?.data?.reportData?.report;
     if (!reportMeta) return reply({ content: "❌ report não encontrado" });
 
-    // Mapear specs dos jogadores
+    // Mapear specs dos jogadores de forma robusta
     const playerSpecs = {};
     const details = reportMeta.playerDetails?.data?.playerDetails;
     if (details) {
       // Percorre dps, healers e tanks no playerDetails
       ["dps", "healers", "tanks"].forEach(role => {
-        if (details[role]) {
+        if (details[role] && Array.isArray(details[role])) {
           details[role].forEach(p => {
+            // Alguns logs podem ter múltiplos specs se o player trocou, pegamos o primeiro
+            let specName = "Unknown";
+            if (p.specs && p.specs.length > 0) {
+              specName = p.specs[0];
+            }
             playerSpecs[p.name] = {
               className: p.type,
-              spec: p.specs?.[0] || "Unknown"
+              spec: specName
             };
           });
         }
@@ -163,12 +168,23 @@ async function processLog(link, reply) {
 
       return entries
         .map(p => {
-          const info = playerSpecs[p.name] || { className: p.type || "Unknown", spec: "Unknown" };
+          const info = playerSpecs[p.name];
+          const className = info ? info.className : (p.type || "Unknown");
+          let spec = info ? info.spec : "Unknown";
+          
+          // Fallback: se a spec ainda for Unknown ou igual à classe, tenta extrair do icon
+          if ((spec === "Unknown" || spec === className) && p.icon) {
+            const iconParts = p.icon.split("-");
+            if (iconParts[0] && iconParts[0] !== className) {
+              spec = iconParts[0];
+            }
+          }
+
           return {
             name: p.name || "Unknown",
             total: p.total || 0,
-            className: info.className,
-            spec: info.spec
+            className: className,
+            spec: spec
           };
         })
         .filter(p => p.name !== "Unknown" && p.total > 0)
@@ -183,7 +199,8 @@ async function processLog(link, reply) {
     const format = (arr) =>
       arr.length
         ? arr.map((p, i) => {
-            return `**${i + 1}.** ${p.name} (${p.className} - ${p.spec}) — **${(p.total / 1000).toFixed(1)}k**`;
+            const specDisplay = (p.spec && p.spec !== "Unknown") ? p.spec : "N/A";
+            return `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${(p.total / 1000).toFixed(1)}k**`;
           }).join("\n")
         : "❌ sem dados";
 
