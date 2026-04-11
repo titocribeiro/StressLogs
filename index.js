@@ -57,7 +57,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("lastlogs")
-    .setDescription("Últimos logs")
+    .setDescription("Últimos logs analisados")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -82,7 +82,7 @@ client.once("ready", () => {
 });
 
 // ===============================
-// PROCESS LOG (VERSÃO FINAL REAL)
+// PROCESS LOG (FINAL STABLE)
 // ===============================
 async function processLog(link, replyFn) {
   const match = link.match(/reports\/([a-zA-Z0-9]+)/);
@@ -99,7 +99,6 @@ async function processLog(link, replyFn) {
     {
       reportData {
         report(code: "${reportId}") {
-
           fights {
             name
             kill
@@ -120,6 +119,9 @@ async function processLog(link, replyFn) {
 
     const report = res.data?.data?.reportData?.report;
 
+    // ===============================
+    // FIGHTS
+    // ===============================
     const fights = report?.fights || [];
 
     const boss = fights.find(f => f.name)?.name || "Unknown Boss";
@@ -127,23 +129,26 @@ async function processLog(link, replyFn) {
     const wipes = fights.length - kills;
 
     // ===============================
-    // 💥 DPS PARSER FINAL ESTÁVEL
+    // 💥 DPS PARSER ESTÁVEL
     // ===============================
-    const entries =
-      report?.table?.data?.entries ||
-      report?.table?.data?.data?.entries ||
+    const table = report?.table;
+
+    const raw =
+      table?.data?.entries ||
+      table?.data?.data?.entries ||
+      table?.tableData?.entries ||
       [];
 
-    const players = entries
+    const players = raw
       .map(p => ({
-        name: p.name || p.character || "Unknown",
-        total: p.total || p.amount || p.dps || 0
+        name: p.name || p.character || p.label || "Unknown",
+        total: p.total || p.amount || p.dps || p.value || 0
       }))
       .filter(p => p.name !== "Unknown" && p.total > 0)
       .sort((a, b) => b.total - a.total);
 
     if (players.length === 0) {
-      return replyFn("❌ não foi possível extrair DPS desse log (estrutura diferente)");
+      return replyFn("❌ esse log não retornou DPS (variação da API do Warcraft Logs)");
     }
 
     const top5 = players.slice(0, 5)
@@ -156,11 +161,17 @@ async function processLog(link, replyFn) {
       players.reduce((a, b) => a + b.total, 0) /
       players.length;
 
+    // ===============================
+    // RAID STATE
+    // ===============================
     let state = "⚖ equilibrado";
     if (wipes > kills * 2) state = "🔥 wipe crítico";
     else if (kills === 0) state = "💀 wipe total";
     else if (wipes < kills) state = "📈 progressão boa";
 
+    // ===============================
+    // EMBED FINAL
+    // ===============================
     const embed = new EmbedBuilder()
       .setTitle("👑 RAID ANALYSIS FINAL STABLE")
       .setColor(0x00ff99)
@@ -181,10 +192,11 @@ async function processLog(link, replyFn) {
           value:
             `🔥 Melhor: ${best?.name || "?"}\n` +
             `💀 Pior: ${worst?.name || "?"}\n` +
-            `📊 Players: ${players.length}`
+            `📊 Players: ${players.length}\n` +
+            `📈 DPS médio: ${(avg / 1000).toFixed(1)}k`
         }
       )
-      .setFooter({ text: "StressLogs FINAL STABLE • Discord Only" });
+      .setFooter({ text: "Discord Only • Stable Version" });
 
     return replyFn({ embeds: [embed] });
 
@@ -206,16 +218,16 @@ client.on("interactionCreate", async (i) => {
   }
 
   if (i.commandName === "ranking") {
-    return i.reply("👑 ranking simples ativo (pode evoluir depois)");
+    return i.reply("👑 ranking simples (ainda em memória local)");
   }
 
   if (i.commandName === "lastlogs") {
-    return i.reply("📜 logs simples ativos (memória local)");
+    return i.reply("📜 logs simples (memória local)");
   }
 });
 
 // ===============================
-// MESSAGE SUPPORT (!log + link direto)
+// MESSAGE SUPPORT
 // ===============================
 client.on("messageCreate", async (m) => {
   if (m.author.bot) return;
