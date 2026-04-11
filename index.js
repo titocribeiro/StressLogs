@@ -169,7 +169,7 @@ async function processLog(link, reply) {
 
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
-    // Passo 2: buscar tabelas de performance (Queries Separadas para Estabilidade)
+    // Passo 2: buscar tabelas de performance (Apenas o essencial)
     const fetchTable = async (dataType) => {
       const query = `
       {
@@ -195,50 +195,6 @@ async function processLog(link, reply) {
     const tableDamage = await fetchTable("DamageDone");
     const tableHealing = await fetchTable("Healing");
     const tableTank = await fetchTable("DamageTaken");
-    const tableDeaths = await fetchTable("Deaths");
-    const tableBuffs = await fetchTable("Buffs");
-
-    const deaths = tableDeaths?.entries || [];
-    let firstDeathStr = "Ninguém morreu! 🎉";
-    if (deaths.length > 0) {
-      const first = deaths[0];
-      firstDeathStr = `💀 **${first.name}** (${first.ability?.name || "Dano desconhecido"})`;
-    }
-
-    // ===============================
-    // CONTAGEM DE CONSUMÍVEIS (v23 - Lógica Robusta)
-    // ===============================
-    const buffsEntries = tableBuffs?.entries || [];
-    const playersWithFlask = new Set();
-    const playersWithFood = new Set();
-
-    buffsEntries.forEach(buff => {
-      const buffName = buff.name.toLowerCase();
-      const isFlask = buffName.includes("flask") || buffName.includes("phial") || buffName.includes("frasco") || buffName.includes("fíala");
-      const isFood = buffName.includes("well fed") || buffName.includes("food") || buffName.includes("comida") || buffName.includes("alimentado") || buffName.includes("saciedade");
-
-      if (isFlask || isFood) {
-        if (buff.bands && Array.isArray(buff.bands)) {
-          buff.bands.forEach(band => {
-            if (band.targets && Array.isArray(band.targets)) {
-              band.targets.forEach(target => {
-                if (isFlask) playersWithFlask.add(target.name);
-                if (isFood) playersWithFood.add(target.name);
-              });
-            }
-          });
-        }
-        if (buff.targets && Array.isArray(buff.targets)) {
-          buff.targets.forEach(target => {
-            if (isFlask) playersWithFlask.add(target.name);
-            if (isFood) playersWithFood.add(target.name);
-          });
-        }
-      }
-    });
-
-    const hasFlask = playersWithFlask.size;
-    const hasFood = playersWithFood.size;
 
     // ===============================
     // GENERIC EXTRACTOR
@@ -305,8 +261,6 @@ async function processLog(link, reply) {
         { name: "⏱ Duração", value: durationStr, inline: true },
         { name: "📉 Status", value: isKill ? "✅ Morto" : `❌ ${wipePercent}`, inline: true },
         { name: "🎒 Média ilvl", value: `${avgIlvl}`, inline: true },
-        { name: "💀 Primeira Morte", value: firstDeathStr, inline: true },
-        { name: "🧪 Consumíveis", value: `🧪 Flasks: ${hasFlask}/${playerCount} | 🍗 Food: ${hasFood}/${playerCount}`, inline: true },
         { name: "💥 DPS", value: format(dps) },
         { name: "💚 HEALERS", value: format(heal) },
         { name: "🛡 TANKS", value: format(tank) }
