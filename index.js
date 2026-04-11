@@ -236,10 +236,10 @@ async function processLog(link, reply) {
     const tank = extract(report.tableTank, "tanks");
 
     // ===============================
-    // PROGRESS BAR GENERATOR
+    // PROGRESS BAR GENERATOR (Compacta)
     // ===============================
     const createBar = (current, max) => {
-      const size = 6; // Tamanho da barra (6 blocos)
+      const size = 5; // Barra menor para caber na mesma linha
       const percentage = max > 0 ? (current / max) : 0;
       const filled = Math.round(size * percentage);
       const empty = size - filled;
@@ -248,13 +248,14 @@ async function processLog(link, reply) {
 
     const format = (arr) => {
       if (!arr.length) return "❌ sem dados";
-      const maxVal = arr[0].total; // O primeiro da lista é o máximo
+      const maxVal = arr[0].total;
       let result = "";
       for (let i = 0; i < arr.length; i++) {
         const p = arr[i];
         const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
         const bar = createBar(p.total, maxVal);
-        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay})\n\`${bar}\` — **${(p.total / 1000).toFixed(1)}k**\n`;
+        // Formato: 1. Nome (Classe - Spec) — 150.5k [███░░░]
+        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${(p.total / 1000).toFixed(1)}k** \`${bar}\`\n`;
         
         if ((result + line).length > 1000) {
           result += "... e mais jogadores";
