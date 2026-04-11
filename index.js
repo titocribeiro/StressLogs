@@ -102,7 +102,6 @@ async function processLog(link, reply) {
             fightPercentage
             keystoneLevel
             keystoneBonus
-            keystoneTime
           }
           playerDetails(startTime: 0, endTime: 9999999999)
         }
@@ -131,18 +130,6 @@ async function processLog(link, reply) {
 
     if (!targetFight) return reply({ content: "❌ luta não encontrada no log" });
 
-    // ===============================
-    // LOG DE DIAGNÓSTICO (v39)
-    // ===============================
-    console.log("--- DIAGNÓSTICO DE LOG ---");
-    console.log("Dungeon:", targetFight.name);
-    console.log("Keystone Level:", targetFight.keystoneLevel);
-    console.log("Kill (Concluída):", targetFight.kill);
-    console.log("Keystone Bonus (Estrelas):", targetFight.keystoneBonus);
-    console.log("Keystone Time (API):", targetFight.keystoneTime);
-    console.log("Duração Real (ms):", targetFight.endTime - targetFight.startTime);
-    console.log("--------------------------");
-
     const boss = targetFight.name;
     const isKill = targetFight.kill;
     const fightDurationMs = targetFight.endTime - targetFight.startTime;
@@ -153,7 +140,7 @@ async function processLog(link, reply) {
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
 
-    // Lógica de cores dinâmicas (v39 - Diagnóstico e Segurança)
+    // Lógica de cores dinâmicas (v40 - Lógica Rigorosa Baseada em Estrelas)
     let embedColor = "#FFFF00"; // Amarelo (Padrão)
     let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
 
@@ -163,15 +150,13 @@ async function processLog(link, reply) {
         embedColor = "#FF0000"; // Vermelho (Wipe/Não concluída)
         statusText = `❌ ${wipePercent}`;
       } else {
-        // Lógica de segurança: se keystoneBonus for maior que 0 OU keystoneTime for maior que 0
-        // Se ambos forem 0 ou null, é fora do tempo.
-        const inTime = (targetFight.keystoneBonus && targetFight.keystoneBonus > 0) || 
-                       (targetFight.keystoneTime && targetFight.keystoneTime > 0);
-
-        if (inTime) {
+        // Lógica Rigorosa: Só é verde se tiver bônus (estrelas)
+        // Se keystoneBonus for maior que 0 (1, 2 ou 3 estrelas)
+        if (targetFight.keystoneBonus && targetFight.keystoneBonus > 0) {
           embedColor = "#00FF00"; // Verde (No tempo)
           statusText = "✅ Concluída no Tempo";
         } else {
+          // Se keystoneBonus for 0 ou null, mas isKill é true, é fora do tempo
           embedColor = "#FFFF00"; // Amarelo (Fora do tempo)
           statusText = "⚠️ Concluída fora do Tempo";
         }
