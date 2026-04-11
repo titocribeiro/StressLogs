@@ -3,14 +3,13 @@ const {
   GatewayIntentBits,
   SlashCommandBuilder,
   REST,
-  Routes,
-  EmbedBuilder
+  Routes
 } = require("discord.js");
 
 const axios = require("axios");
 
 // ===============================
-// CLIENT (IMPORTANTE INTENT)
+// CLIENT
 // ===============================
 const client = new Client({
   intents: [
@@ -21,7 +20,7 @@ const client = new Client({
 });
 
 // ===============================
-// WCL TOKEN
+// TOKEN WCL
 // ===============================
 async function getWCLToken() {
   const res = await axios.post(
@@ -39,12 +38,12 @@ async function getWCLToken() {
 }
 
 // ===============================
-// SAFE COMMANDS (ANTI CRASH)
+// SLASH COMMAND (SAFE)
 // ===============================
 const commands = [
   new SlashCommandBuilder()
     .setName("log")
-    .setDescription("Analisa logs do Warcraft Logs")
+    .setDescription("Analisa log do Warcraft Logs")
     .addStringOption(opt =>
       opt
         .setName("link")
@@ -53,9 +52,6 @@ const commands = [
     )
 ].map(cmd => cmd.toJSON());
 
-// ===============================
-// REGISTER COMMANDS
-// ===============================
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
 (async () => {
@@ -68,25 +64,17 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
       { body: commands }
     );
 
-    console.log("Slash commands registrados ✔️");
-  } catch (err) {
-    console.error("Erro ao registrar comandos:", err);
+    console.log("Slash commands OK ✔️");
+  } catch (e) {
+    console.error("Erro slash commands:", e);
   }
 })();
 
 // ===============================
-// READY
-// ===============================
-client.once("ready", () => {
-  console.log("Bot online ✔️");
-});
-
-// ===============================
-// CORE ANALYSIS
+// CORE LOGIC
 // ===============================
 async function processLog(link, reply) {
   const reportId = link.match(/reports\/([a-zA-Z0-9]+)/)?.[1];
-
   if (!reportId) return reply("❌ link inválido");
 
   try {
@@ -96,12 +84,27 @@ async function processLog(link, reply) {
     {
       reportData {
         report(code: "${reportId}") {
+
           fights {
             name
             kill
           }
 
-          table(dataType: DamageDone)
+          damageCharacters {
+            name
+            total
+          }
+
+          healingCharacters {
+            name
+            total
+          }
+
+          tankCharacters {
+            name
+            total
+          }
+
         }
       }
     }`;
@@ -110,81 +113,72 @@ async function processLog(link, reply) {
       "https://www.warcraftlogs.com/api/v2/client",
       { query },
       {
-        headers: { Authorization: `Bearer ${token}` }
+        headers: {
+          Authorization: `Bearer ${token}`
+        }
       }
     );
 
     const report = res.data?.data?.reportData?.report;
 
-    if (!report) return reply("❌ report não encontrado");
+    if (!report) {
+      return reply("❌ report não encontrado ou privado");
+    }
 
     // ===============================
     // FIGHTS
     // ===============================
-    const fights = report?.fights || [];
+    const fights = report.fights || [];
 
     const boss = fights[0]?.name || "Unknown Boss";
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.length - kills;
 
     // ===============================
-    // DPS SAFE PARSER
+    // FORMAT LIST
     // ===============================
-    const table = report?.table;
+    const formatList = (arr) => {
+      if (!arr || !arr.length) return "❌ sem dados";
 
-    const entries =
-      table?.data?.entries ||
-      table?.data?.data?.entries ||
-      table?.series ||
-      [];
+      return arr
+        .sort((a, b) => (b.total || 0) - (a.total || 0))
+        .map(p => `• ${p.name} — ${(p.total / 1000).toFixed(1)}k`)
+        .join("\n");
+    };
 
-    const players = (entries || [])
-      .map(p => ({
-        name: p.name || p.character || "Unknown",
-        total: p.total ?? p.amount ?? p.value ?? 0
-      }))
-      .filter(p => p.name !== "Unknown" && p.total > 0)
-      .sort((a, b) => b.total - a.total);
+    const dps = formatList(report.damageCharacters);
+    const heal = formatList(report.healingCharacters);
+    const tank = formatList(report.tankCharacters);
 
-    let dpsText = "❌ DPS não disponível nesse report";
+    const dpsCount = report.damageCharacters?.length || 0;
+    const healCount = report.healingCharacters?.length || 0;
+    const tankCount = report.tankCharacters?.length || 0;
 
-    if (players.length > 0) {
-      const top = players.slice(0, 5)
-        .map(p => `${p.name} - ${(p.total / 1000).toFixed(1)}k`);
+    return reply(
+      `👑 RAID DEBUG MODE\n\n` +
 
-      dpsText = top.join("\n");
-    }
+      `⚔ Boss: ${boss}\n` +
+      `🔥 Kills: ${kills}\n` +
+      `💀 Wipes: ${wipes}\n\n` +
 
-    // ===============================
-    // EMBED FINAL
-    // ===============================
-    const embed = new EmbedBuilder()
-      .setTitle("👑 RAID ANALYSIS SAFE MODE")
-      .setColor(0x00ff99)
-      .addFields(
-        { name: "⚔ Boss", value: boss, inline: true },
-        { name: "🔥 Kills", value: String(kills), inline: true },
-        { name: "💀 Wipes", value: String(wipes), inline: true },
+      `💥 DPS:\n${dps}\n\n` +
+      `💚 HEALERS:\n${heal}\n\n` +
+      `🛡 TANKS:\n${tank}\n\n` +
 
-        { name: "💥 TOP DPS", value: dpsText },
+      `📊 DEBUG:\n` +
+      `DPS: ${dpsCount}\n` +
+      `HEAL: ${healCount}\n` +
+      `TANK: ${tankCount}`
+    );
 
-        {
-          name: "📊 Players",
-          value: String(players.length)
-        }
-      )
-      .setFooter({ text: "Stable Mode • No Crash Build" });
-
-    return reply({ embeds: [embed] });
-
-  } catch (err) {
-    console.error(err);
+  } catch (e) {
+    console.error(e);
     return reply("❌ erro ao analisar log");
   }
 }
 
 // ===============================
-// SLASH COMMAND HANDLER
+// SLASH HANDLER
 // ===============================
 client.on("interactionCreate", async i => {
   if (!i.isChatInputCommand()) return;
@@ -198,7 +192,7 @@ client.on("interactionCreate", async i => {
 });
 
 // ===============================
-// LINK DIRETO (SÓ COLAR)
+// LINK DIRETO (COLAR LINK)
 // ===============================
 client.on("messageCreate", async m => {
   if (m.author.bot) return;
