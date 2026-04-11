@@ -56,9 +56,7 @@ async function getReportData(reportId, token) {
     "https://www.warcraftlogs.com/api/v2/client",
     { query },
     {
-      headers: {
-        Authorization: `Bearer ${token}`
-      }
+      headers: { Authorization: `Bearer ${token}` }
     }
   );
 
@@ -66,7 +64,7 @@ async function getReportData(reportId, token) {
 }
 
 // ===============================
-// SLASH COMMAND (/log)
+// SLASH COMMANDS
 // ===============================
 const commands = [
   new SlashCommandBuilder()
@@ -80,44 +78,38 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("ranking")
-    .setDescription("Mostra ranking simples da guilda (últimos logs salvos)")
+    .setDescription("Ranking da guilda"),
+
+  new SlashCommandBuilder()
+    .setName("lastlogs")
+    .setDescription("Últimos logs da guilda")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
 (async () => {
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(
-        process.env.CLIENT_ID,
-        process.env.GUILD_ID
-      ),
-      { body: commands }
-    );
+  await rest.put(
+    Routes.applicationGuildCommands(
+      process.env.CLIENT_ID,
+      process.env.GUILD_ID
+    ),
+    { body: commands }
+  );
 
-    console.log("Slash commands registrados ✔️");
-  } catch (err) {
-    console.error(err);
-  }
+  console.log("Slash commands OK ✔️");
 })();
 
 // ===============================
-// MEMÓRIA SIMPLES (ranking básico)
+// MEMÓRIA SIMPLES
 // ===============================
-let guildLogs = [];
-
-// ===============================
-// BOT ONLINE
-// ===============================
-client.once("ready", () => {
-  console.log("Bot online ✔️");
-});
+let logs = [];
+let playerStats = {};
 
 // ===============================
 // PROCESSAR LOG
 // ===============================
 async function processLog(link, replyFn) {
-  const match = link.match(/warcraftlogs\.com\/reports\/([a-zA-Z0-9]+)/);
+  const match = link.match(/reports\/([a-zA-Z0-9]+)/);
   if (!match) return replyFn("❌ link inválido");
 
   const reportId = match[1];
@@ -129,8 +121,8 @@ async function processLog(link, replyFn) {
     const data = await getReportData(reportId, token);
 
     const report = data?.data?.reportData?.report;
-
     const fights = report?.fights || [];
+
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.length - kills;
 
@@ -140,31 +132,38 @@ async function processLog(link, replyFn) {
       table?.data?.entries ||
       [];
 
-    const topDps = entries
+    const sorted = entries
       .filter(p => p?.name && p?.total)
-      .sort((a, b) => b.total - a.total)
-      .slice(0, 5)
-      .map(p => `${p.name} — ${(p.total / 1000).toFixed(1)}k DPS`);
+      .sort((a, b) => b.total - a.total);
 
-    const bossName = fights.find(f => f.name)?.name || "Unknown Boss";
+    const top5 = sorted.slice(0, 5)
+      .map(p => `${p.name} — ${(p.total / 1000).toFixed(1)}k`);
 
-    // salva no ranking simples
-    guildLogs.push({
-      reportId,
-      bossName,
-      top: topDps[0] || "N/A"
+    const boss = fights.find(f => f.name)?.name || "Unknown";
+
+    // ===============================
+    // STATS POR PLAYER (RANKING)
+    // ===============================
+    sorted.forEach(p => {
+      if (!playerStats[p.name]) {
+        playerStats[p.name] = { total: 0, fights: 0 };
+      }
+
+      playerStats[p.name].total += p.total;
+      playerStats[p.name].fights += 1;
     });
 
+    logs.push({ reportId, boss });
+
     const embed = new EmbedBuilder()
-      .setTitle("📊 Resumo do Log")
+      .setTitle("📊 Log Analisado")
       .setColor(0x00ff99)
       .addFields(
-        { name: "⚔ Boss", value: bossName, inline: true },
+        { name: "⚔ Boss", value: boss, inline: true },
         { name: "🔥 Kills", value: String(kills), inline: true },
         { name: "💀 Wipes", value: String(wipes), inline: true },
-        { name: "💥 Top DPS", value: topDps.join("\n") || "Sem dados" }
-      )
-      .setFooter({ text: "StressLogs • Warcraft Logs" });
+        { name: "💥 Top DPS", value: top5.join("\n") }
+      );
 
     return replyFn({ embeds: [embed] });
 
@@ -175,59 +174,61 @@ async function processLog(link, replyFn) {
 }
 
 // ===============================
-// SLASH INTERACTIONS
+// BOT
 // ===============================
-client.on("interactionCreate", async (interaction) => {
-  if (!interaction.isChatInputCommand()) return;
+client.once("ready", () => {
+  console.log("Bot online ✔️");
+});
+
+// ===============================
+// COMMANDS
+// ===============================
+client.on("interactionCreate", async (i) => {
+  if (!i.isChatInputCommand()) return;
 
   // /log
-  if (interaction.commandName === "log") {
-    const link = interaction.options.getString("link");
-
-    await interaction.reply("📊 Analisando log...");
-
-    return processLog(link, (msg) =>
-      interaction.editReply(msg)
-    );
+  if (i.commandName === "log") {
+    await i.reply("📊 analisando...");
+    return processLog(i.options.getString("link"), (m) => i.editReply(m));
   }
 
   // /ranking
-  if (interaction.commandName === "ranking") {
-    if (guildLogs.length === 0) {
-      return interaction.reply("Ainda não tem logs salvos 😢");
-    }
-
-    const top = guildLogs.slice(-10).reverse();
-
-    const text = top
-      .map(l => `⚔ ${l.bossName} — ${l.top}`)
+  if (i.commandName === "ranking") {
+    const top = Object.entries(playerStats)
+      .sort((a, b) => b[1].total - a[1].total)
+      .slice(0, 10)
+      .map(([name, data]) =>
+        `${name} — ${(data.total / 1000).toFixed(1)}k avg`
+      )
       .join("\n");
 
-    return interaction.reply({
-      content: `🏆 Últimos logs da guilda:\n\n${text}`
-    });
+    return i.reply("🏆 Ranking da guilda:\n\n" + (top || "sem dados"));
+  }
+
+  // /lastlogs
+  if (i.commandName === "lastlogs") {
+    const list = logs.slice(-10).reverse()
+      .map(l => `⚔ ${l.boss}`)
+      .join("\n");
+
+    return i.reply("📜 Últimos logs:\n\n" + list);
   }
 });
 
 // ===============================
-// PREFIX + AUTO LINK
+// MESSAGE
 // ===============================
-client.on("messageCreate", async (message) => {
-  if (message.author.bot) return;
+client.on("messageCreate", async (m) => {
+  if (m.author.bot) return;
 
-  const content = message.content;
-
-  if (content.startsWith("!log")) {
-    const link = content.replace("!log", "").trim();
-    return processLog(link, (msg) => message.reply(msg));
+  if (m.content.startsWith("!log")) {
+    return processLog(m.content.replace("!log", ""), (r) => m.reply(r));
   }
 
-  if (content.includes("warcraftlogs.com/reports/")) {
-    return processLog(content.trim(), (msg) => message.reply(msg));
+  if (m.content.includes("warcraftlogs.com/reports/")) {
+    return processLog(m.content, (r) => m.reply(r));
   }
 });
 
-// ===============================
-// LOGIN
 // ===============================
 client.login(process.env.DISCORD_TOKEN);
