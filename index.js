@@ -1,6 +1,8 @@
-require("dotenv").config();
 const { Client, GatewayIntentBits } = require("discord.js");
 const axios = require("axios");
+
+// ❌ NÃO precisa de dotenv no Railway
+// require("dotenv").config();
 
 const client = new Client({
   intents: [
@@ -10,7 +12,6 @@ const client = new Client({
   ]
 });
 
-// pega token da API do Warcraft Logs
 async function getWCLToken() {
   const res = await axios.post(
     "https://www.warcraftlogs.com/oauth/token",
@@ -28,7 +29,6 @@ async function getWCLToken() {
   return res.data.access_token;
 }
 
-// busca dados do report
 async function getReportData(reportId, token) {
   const query = `
   {
@@ -74,12 +74,10 @@ client.on("messageCreate", async (message) => {
 
     const report = data?.data?.reportData?.report;
 
-    // 🧠 fights
     const fights = report?.fights || [];
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.filter(f => !f.kill).length;
 
-    // 🧠 DPS (corrigido pra múltiplos formatos possíveis)
     const table = report?.table;
 
     const entries =
@@ -95,7 +93,6 @@ client.on("messageCreate", async (message) => {
         dps: Math.round((p.total ?? 0) / 1000)
       }));
 
-    // 🧾 resposta final
     let reply =
 `📊 RESUMO DA RAID\n` +
 `Kills: ${kills} | Wipes: ${wipes} | Fights: ${fights.length}\n\n` +
