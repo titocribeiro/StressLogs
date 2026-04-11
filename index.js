@@ -296,11 +296,12 @@ client.on("interactionCreate", async i => {
 });
 
 // ===============================
-// LINK COLADO DIRETO (Prioridade)
+// LINK COLADO DIRETO (Prioridade Máxima)
 // ===============================
 client.on("messageCreate", async m => {
   if (m.author.bot) return;
 
+  // Regex melhorada para detectar o link em qualquer parte da mensagem
   const match = m.content.match(
     /https:\/\/www\.warcraftlogs\.com\/reports\/[a-zA-Z0-9]+(\?fight=\d+|&fight=\d+|&fight=last)?/
   );
@@ -308,10 +309,11 @@ client.on("messageCreate", async m => {
   if (!match) return;
 
   try {
+    // Responde com carregamento e depois edita para o Embed
     const loadingMsg = await m.reply("📊 analisando log...");
     return processLog(match[0], r => loadingMsg.edit(r));
   } catch (e) {
-    console.error(e);
+    console.error("Erro ao processar link direto:", e);
     return m.reply("❌ erro ao analisar log");
   }
 });
