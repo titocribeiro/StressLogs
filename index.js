@@ -169,30 +169,36 @@ async function processLog(link, reply) {
 
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
-    // Passo 2: buscar tabelas de performance
-    const tableQuery = `
-    {
-      reportData {
-        report(code: "${reportId}") {
-          table(dataType: DamageDone, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
-          tableHealing: table(dataType: Healing, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
-          tableTank: table(dataType: DamageTaken, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
-          tableDeaths: table(dataType: Deaths, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
-          tableBuffs: table(dataType: Buffs, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
+    // Passo 2: buscar tabelas de performance (Queries Separadas para Estabilidade)
+    const fetchTable = async (dataType) => {
+      const query = `
+      {
+        reportData {
+          report(code: "${reportId}") {
+            table(dataType: ${dataType}, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
+          }
         }
+      }`;
+      try {
+        const res = await axios.post(
+          "https://www.warcraftlogs.com/api/v2/client",
+          { query },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
+        return res.data?.data?.reportData?.report?.table?.data;
+      } catch (e) {
+        console.error(`Erro ao buscar tabela ${dataType}:`, e.message);
+        return null;
       }
-    }`;
+    };
 
-    const tableRes = await axios.post(
-      "https://www.warcraftlogs.com/api/v2/client",
-      { query: tableQuery },
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
+    const tableDamage = await fetchTable("DamageDone");
+    const tableHealing = await fetchTable("Healing");
+    const tableTank = await fetchTable("DamageTaken");
+    const tableDeaths = await fetchTable("Deaths");
+    const tableBuffs = await fetchTable("Buffs");
 
-    const report = tableRes.data?.data?.reportData?.report;
-    if (!report) return reply({ content: "❌ erro ao buscar tabelas" });
-
-    const deaths = report.tableDeaths?.data?.entries || [];
+    const deaths = tableDeaths?.entries || [];
     let firstDeathStr = "Ninguém morreu! 🎉";
     if (deaths.length > 0) {
       const first = deaths[0];
@@ -200,9 +206,9 @@ async function processLog(link, reply) {
     }
 
     // ===============================
-    // CONTAGEM DE CONSUMÍVEIS (v22 - Lógica de Buffs Corrigida)
+    // CONTAGEM DE CONSUMÍVEIS (v23 - Lógica Robusta)
     // ===============================
-    const buffsEntries = report.tableBuffs?.data?.entries || [];
+    const buffsEntries = tableBuffs?.entries || [];
     const playersWithFlask = new Set();
     const playersWithFood = new Set();
 
@@ -212,7 +218,6 @@ async function processLog(link, reply) {
       const isFood = buffName.includes("well fed") || buffName.includes("food") || buffName.includes("comida") || buffName.includes("alimentado") || buffName.includes("saciedade");
 
       if (isFlask || isFood) {
-        // Na API v2, os jogadores que têm o buff estão na lista de 'bands' ou 'targets'
         if (buff.bands && Array.isArray(buff.bands)) {
           buff.bands.forEach(band => {
             if (band.targets && Array.isArray(band.targets)) {
@@ -223,7 +228,6 @@ async function processLog(link, reply) {
             }
           });
         }
-        // Fallback para targets direto
         if (buff.targets && Array.isArray(buff.targets)) {
           buff.targets.forEach(target => {
             if (isFlask) playersWithFlask.add(target.name);
@@ -239,9 +243,8 @@ async function processLog(link, reply) {
     // ===============================
     // GENERIC EXTRACTOR
     // ===============================
-    const extract = (table, targetRole) => {
-      const raw = table?.data;
-      const entries = raw?.entries || [];
+    const extract = (data, targetRole) => {
+      const entries = data?.entries || [];
 
       return entries
         .map(p => {
@@ -269,9 +272,9 @@ async function processLog(link, reply) {
         .sort((a, b) => b.total - a.total);
     };
 
-    const dps = extract(report.table, "dps");
-    const heal = extract(report.tableHealing, "healers");
-    const tank = extract(report.tableTank, "tanks");
+    const dps = extract(tableDamage, "dps");
+    const heal = extract(tableHealing, "healers");
+    const tank = extract(tableTank, "tanks");
 
     const format = (arr) => {
       if (!arr.length) return "❌ sem dados";
@@ -314,7 +317,7 @@ async function processLog(link, reply) {
     return reply({ embeds: [embed] });
 
   } catch (e) {
-    console.error(e?.response?.data || e);
+    console.error("Erro geral no processLog:", e.message);
     return reply({ content: "❌ erro ao analisar log" });
   }
 }
