@@ -9,12 +9,19 @@ const {
 
 const axios = require("axios");
 
+// ===============================
+// CLIENT
+// ===============================
 const client = new Client({
-  intents: [GatewayIntentBits.Guilds]
+  intents: [
+    GatewayIntentBits.Guilds,
+    GatewayIntentBits.GuildMessages,
+    GatewayIntentBits.MessageContent
+  ]
 });
 
 // ===============================
-// WCL TOKEN
+// WARCRAFT LOGS TOKEN
 // ===============================
 async function getWCLToken() {
   const res = await axios.post(
@@ -32,7 +39,7 @@ async function getWCLToken() {
 }
 
 // ===============================
-// WCL REPORT
+// WARCRAFT LOGS REPORT
 // ===============================
 async function getReportData(reportId, token) {
   const query = `
@@ -61,7 +68,7 @@ async function getReportData(reportId, token) {
 }
 
 // ===============================
-// SLASH COMMAND
+// SLASH COMMAND REGISTER (/log)
 // ===============================
 const commands = [
   new SlashCommandBuilder()
@@ -77,10 +84,9 @@ const commands = [
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
-// 🔥 AGORA É GUILD COMMAND (ATUALIZA INSTANTÂNEO)
 (async () => {
   try {
-    console.log("Registrando slash command (GUILD)...");
+    console.log("Registrando slash command...");
 
     await rest.put(
       Routes.applicationGuildCommands(
@@ -104,7 +110,7 @@ client.once("ready", () => {
 });
 
 // ===============================
-// PROCESSAR LOG
+// FUNÇÃO CENTRAL (REUTILIZADA)
 // ===============================
 async function processLog(link, replyFn) {
   const match = link.match(/warcraftlogs\.com\/reports\/([a-zA-Z0-9]+)/);
@@ -128,6 +134,7 @@ async function processLog(link, replyFn) {
     const wipes = fights.length - kills;
 
     const table = report?.table;
+
     const entries =
       table?.data?.data?.entries ||
       table?.data?.entries ||
@@ -158,7 +165,7 @@ async function processLog(link, replyFn) {
 }
 
 // ===============================
-// SLASH COMMAND INTERACTION
+// SLASH COMMAND (/log)
 // ===============================
 client.on("interactionCreate", async (interaction) => {
   if (!interaction.isChatInputCommand()) return;
@@ -168,15 +175,24 @@ client.on("interactionCreate", async (interaction) => {
 
   await interaction.reply("📊 Analisando log...");
 
-  try {
-    const replyFn = (msg) => interaction.editReply(msg);
+  await processLog(link, (msg) =>
+    interaction.editReply(msg)
+  );
+});
 
-    await processLog(link, replyFn);
+// ===============================
+// PREFIX COMMAND (!log)
+// ===============================
+client.on("messageCreate", async (message) => {
+  if (message.author.bot) return;
 
-  } catch (err) {
-    console.error(err);
-    interaction.editReply("❌ erro");
-  }
+  if (!message.content.startsWith("!log")) return;
+
+  const link = message.content.replace("!log", "").trim();
+
+  await processLog(link, (msg) =>
+    message.reply(msg)
+  );
 });
 
 // ===============================
