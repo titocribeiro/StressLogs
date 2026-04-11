@@ -21,7 +21,7 @@ const client = new Client({
 });
 
 // ===============================
-// WCL TOKEN
+// TOKEN WCL
 // ===============================
 async function getWCLToken() {
   const res = await axios.post(
@@ -39,7 +39,7 @@ async function getWCLToken() {
 }
 
 // ===============================
-// WCL REPORT (FIXED)
+// QUERY CORRETA (RANKINGS)
 // ===============================
 async function getReportData(reportId, token) {
   const query = `
@@ -51,7 +51,8 @@ async function getReportData(reportId, token) {
           name
           kill
         }
-        table(dataType: DamageDone)
+
+        rankings(metric: dps)
       }
     }
   }`;
@@ -74,7 +75,7 @@ let logs = [];
 let players = {};
 
 // ===============================
-// COMMANDS
+// SLASH COMMANDS
 // ===============================
 const commands = [
   new SlashCommandBuilder()
@@ -92,7 +93,7 @@ const commands = [
 
   new SlashCommandBuilder()
     .setName("lastlogs")
-    .setDescription("Últimos logs analisados")
+    .setDescription("Últimos logs")
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -106,18 +107,18 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
     { body: commands }
   );
 
-  console.log("Slash commands registrados ✔️");
+  console.log("Slash commands OK ✔️");
 })();
 
 // ===============================
-// READY
+// BOT READY
 // ===============================
 client.once("ready", () => {
   console.log("Bot online ✔️");
 });
 
 // ===============================
-// PROCESS LOG (VERSÃO FINAL CORRIGIDA)
+// PROCESS LOG (FINAL FIX REAL)
 // ===============================
 async function processLog(link, replyFn) {
   const match = link.match(/reports\/([a-zA-Z0-9]+)/);
@@ -137,29 +138,27 @@ async function processLog(link, replyFn) {
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.length - kills;
 
-    // ===============================
-    // 💥 DPS FIX REAL
-    // ===============================
-    const table = report?.table;
+    const boss = fights.find(f => f.name)?.name || "Unknown Boss";
 
-    const entries =
-      table?.data?.data?.playerDetails?.dps ||
-      table?.data?.playerDetails?.dps ||
-      table?.data?.data?.entries ||
+    // ===============================
+    // 💥 DPS REAL (RANKINGS FIX)
+    // ===============================
+    const rankingData =
+      report?.rankings?.data?.report?.friendlies ||
+      report?.rankings?.data?.friendlies ||
+      report?.rankings?.data ||
       [];
 
-    const normalized = entries
+    const normalized = (rankingData || [])
       .map(p => ({
         name: p.name || p.character || "Unknown",
-        total: p.total || p.amount || 0
+        total: p.total || p.dps || 0
       }))
       .filter(p => p.name && p.total > 0)
       .sort((a, b) => b.total - a.total);
 
     const top5 = normalized.slice(0, 5)
       .map(p => `${p.name} — ${(p.total / 1000).toFixed(1)}k DPS`);
-
-    const boss = fights.find(f => f.name)?.name || "Unknown Boss";
 
     // ===============================
     // RAID STATE
@@ -199,7 +198,7 @@ async function processLog(link, replyFn) {
     const worst = normalized[normalized.length - 1];
 
     const embed = new EmbedBuilder()
-      .setTitle("👑 RAID ANALYSIS FINAL")
+      .setTitle("👑 RAID ANALYSIS FINAL FIX")
       .setColor(0x00ff99)
       .addFields(
         { name: "⚔ Boss", value: boss, inline: true },
@@ -219,7 +218,7 @@ async function processLog(link, replyFn) {
             `📊 Players: ${normalized.length}`
         }
       )
-      .setFooter({ text: "StressLogs FINAL • Discord Only" });
+      .setFooter({ text: "StressLogs FINAL FIX • Discord Only" });
 
     return replyFn({ embeds: [embed] });
 
