@@ -9,8 +9,6 @@ const {
 const axios = require("axios");
 
 // ===============================
-// CLIENT
-// ===============================
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -19,8 +17,6 @@ const client = new Client({
   ]
 });
 
-// ===============================
-// TOKEN WCL
 // ===============================
 async function getWCLToken() {
   const res = await axios.post(
@@ -38,40 +34,18 @@ async function getWCLToken() {
 }
 
 // ===============================
-// SLASH COMMAND (SAFE)
+// DETECTA TIPO DO REPORT
 // ===============================
-const commands = [
-  new SlashCommandBuilder()
-    .setName("log")
-    .setDescription("Analisa log do Warcraft Logs")
-    .addStringOption(opt =>
-      opt
-        .setName("link")
-        .setDescription("Cole o link do report")
-        .setRequired(true)
-    )
-].map(cmd => cmd.toJSON());
+function detectReportType(report) {
+  const hasFights = report?.fights?.length > 0;
+  const hasDamage = (report?.table?.data?.entries || []).length > 0;
 
-const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+  if (!hasFights) return "INVALID";
+  if (!hasDamage) return "SUMMARY_ONLY";
 
-(async () => {
-  try {
-    await rest.put(
-      Routes.applicationGuildCommands(
-        process.env.CLIENT_ID,
-        process.env.GUILD_ID
-      ),
-      { body: commands }
-    );
+  return "FULL";
+}
 
-    console.log("Slash commands OK ✔️");
-  } catch (e) {
-    console.error("Erro slash commands:", e);
-  }
-})();
-
-// ===============================
-// CORE LOGIC
 // ===============================
 async function processLog(link, reply) {
   const reportId = link.match(/reports\/([a-zA-Z0-9]+)/)?.[1];
@@ -90,20 +64,7 @@ async function processLog(link, reply) {
             kill
           }
 
-          damageCharacters {
-            name
-            total
-          }
-
-          healingCharacters {
-            name
-            total
-          }
-
-          tankCharacters {
-            name
-            total
-          }
+          table(dataType: DamageDone)
 
         }
       }
@@ -112,73 +73,74 @@ async function processLog(link, reply) {
     const res = await axios.post(
       "https://www.warcraftlogs.com/api/v2/client",
       { query },
-      {
-        headers: {
-          Authorization: `Bearer ${token}`
-        }
-      }
+      { headers: { Authorization: `Bearer ${token}` } }
     );
 
     const report = res.data?.data?.reportData?.report;
 
-    if (!report) {
-      return reply("❌ report não encontrado ou privado");
-    }
+    if (!report) return reply("❌ report não encontrado");
 
     // ===============================
-    // FIGHTS
+    // DETECÇÃO INTELIGENTE
     // ===============================
+    const type = detectReportType(report);
+
     const fights = report.fights || [];
-
     const boss = fights[0]?.name || "Unknown Boss";
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.length - kills;
 
     // ===============================
-    // FORMAT LIST
+    // DPS EXTRACTION SEGURA
     // ===============================
-    const formatList = (arr) => {
-      if (!arr || !arr.length) return "❌ sem dados";
+    const entries =
+      report?.table?.data?.entries ||
+      report?.table?.data?.data?.entries ||
+      [];
 
-      return arr
-        .sort((a, b) => (b.total || 0) - (a.total || 0))
-        .map(p => `• ${p.name} — ${(p.total / 1000).toFixed(1)}k`)
-        .join("\n");
-    };
+    const players = entries
+      .map(p => ({
+        name: p.name,
+        total: p.total || 0
+      }))
+      .filter(p => p.name && p.total > 0)
+      .sort((a, b) => b.total - a.total);
 
-    const dps = formatList(report.damageCharacters);
-    const heal = formatList(report.healingCharacters);
-    const tank = formatList(report.tankCharacters);
+    // ===============================
+    // OUTPUT INTELIGENTE
+    // ===============================
+    let dpsText = "";
 
-    const dpsCount = report.damageCharacters?.length || 0;
-    const healCount = report.healingCharacters?.length || 0;
-    const tankCount = report.tankCharacters?.length || 0;
+    if (type === "INVALID") {
+      dpsText = "❌ Report inválido ou sem fights";
+    } 
+    else if (type === "SUMMARY_ONLY") {
+      dpsText = "⚠ Esse report é SUMMARY_ONLY (sem DPS detalhado na API)";
+    } 
+    else {
+      dpsText =
+        players.length > 0
+          ? players.slice(0, 10).map(p =>
+              `• ${p.name} — ${(p.total / 1000).toFixed(1)}k`
+            ).join("\n")
+          : "❌ DPS não encontrado";
+    }
 
     return reply(
-      `👑 RAID DEBUG MODE\n\n` +
-
+      `👑 SMART RAID ANALYSIS\n\n` +
       `⚔ Boss: ${boss}\n` +
       `🔥 Kills: ${kills}\n` +
       `💀 Wipes: ${wipes}\n\n` +
-
-      `💥 DPS:\n${dps}\n\n` +
-      `💚 HEALERS:\n${heal}\n\n` +
-      `🛡 TANKS:\n${tank}\n\n` +
-
-      `📊 DEBUG:\n` +
-      `DPS: ${dpsCount}\n` +
-      `HEAL: ${healCount}\n` +
-      `TANK: ${tankCount}`
+      `📊 TYPE: ${type}\n\n` +
+      `💥 DPS:\n${dpsText}`
     );
 
   } catch (e) {
     console.error(e);
-    return reply("❌ erro ao analisar log");
+    return reply("❌ erro na API");
   }
 }
 
-// ===============================
-// SLASH HANDLER
 // ===============================
 client.on("interactionCreate", async i => {
   if (!i.isChatInputCommand()) return;
@@ -192,24 +154,17 @@ client.on("interactionCreate", async i => {
 });
 
 // ===============================
-// LINK DIRETO (COLAR LINK)
-// ===============================
 client.on("messageCreate", async m => {
   if (m.author.bot) return;
 
   const match = m.content.match(
-    /https:\/\/www\.warcraftlogs\.com\/reports\/[a-zA-Z0-9]+(\?fight=\d+)?/
+    /https:\/\/www\.warcraftlogs\.com\/reports\/[a-zA-Z0-9]+(\?fight=\d+|&fight=\d+|&fight=last)?/
   );
 
   if (!match) return;
 
-  try {
-    await m.reply("📊 analisando log...");
-    return processLog(match[0], r => m.reply(r));
-  } catch (e) {
-    console.error(e);
-    return m.reply("❌ erro ao analisar log");
-  }
+  await m.reply("📊 analisando log...");
+  return processLog(match[0], r => m.reply(r));
 });
 
 // ===============================
