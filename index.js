@@ -170,6 +170,7 @@ async function processLog(link, reply) {
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
     // Passo 2: buscar tabelas de performance
+    // IMPORTANTE: Para buffs, usamos hostilityType: Friend para pegar buffs de aliados
     const tableQuery = `
     {
       reportData {
@@ -178,7 +179,7 @@ async function processLog(link, reply) {
           tableHealing: table(dataType: Healing, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
           tableTank: table(dataType: DamageTaken, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
           tableDeaths: table(dataType: Deaths, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
-          tableBuffs: table(dataType: Buffs, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
+          tableBuffs: table(dataType: Buffs, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime}, hostilityType: Friend)
         }
       }
     }`;
@@ -200,7 +201,7 @@ async function processLog(link, reply) {
     }
 
     // ===============================
-    // CONTAGEM DE CONSUMÍVEIS (v20 - Lógica Invertida)
+    // CONTAGEM DE CONSUMÍVEIS (v21 - Lógica de Buffs Corrigida)
     // ===============================
     const buffsEntries = report.tableBuffs?.data?.entries || [];
     const playersWithFlask = new Set();
@@ -212,10 +213,9 @@ async function processLog(link, reply) {
       const isFood = buffName.includes("well fed") || buffName.includes("food") || buffName.includes("comida") || buffName.includes("alimentado") || buffName.includes("saciedade");
 
       if (isFlask || isFood) {
-        // Na API v2, se o buff for por habilidade, os jogadores estão em 'bands' ou 'targets'
+        // Na API v2, os jogadores que têm o buff estão na lista de 'bands' ou 'targets'
         if (buff.bands && Array.isArray(buff.bands)) {
           buff.bands.forEach(band => {
-            // Se houver uma lista de alvos (targets) dentro da banda
             if (band.targets && Array.isArray(band.targets)) {
               band.targets.forEach(target => {
                 if (isFlask) playersWithFlask.add(target.name);
@@ -224,7 +224,7 @@ async function processLog(link, reply) {
             }
           });
         }
-        // Fallback: em algumas versões da API, os jogadores estão direto em 'targets'
+        // Fallback para targets direto
         if (buff.targets && Array.isArray(buff.targets)) {
           buff.targets.forEach(target => {
             if (isFlask) playersWithFlask.add(target.name);
