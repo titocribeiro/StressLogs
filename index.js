@@ -21,7 +21,7 @@ const client = new Client({
 });
 
 // ===============================
-// WCL TOKEN
+// TOKEN WCL
 // ===============================
 async function getWCLToken() {
   const res = await axios.post(
@@ -44,10 +44,10 @@ async function getWCLToken() {
 const commands = [
   new SlashCommandBuilder()
     .setName("log")
-    .setDescription("Análise profissional de log")
+    .setDescription("Analisa log do Warcraft Logs")
     .addStringOption(opt =>
       opt.setName("link")
-        .setDescription("Link do Warcraft Logs")
+        .setDescription("Link do report")
         .setRequired(true)
     )
 ].map(c => c.toJSON());
@@ -70,32 +70,27 @@ const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 // READY
 // ===============================
 client.once("ready", () => {
-  console.log("Mini WCL Bot online ✔️");
+  console.log("Bot online ✔️");
 });
 
 // ===============================
-// CORE ANALYSIS ENGINE
+// CORE LOGIC
 // ===============================
 async function processLog(link, replyFn) {
-  const reportId = link.match(/reports\/([a-zA-Z0-9]+)/)?.[1];
+  const match = link.match(/reports\/([a-zA-Z0-9]+)/);
+  if (!match) return replyFn("❌ link inválido");
 
-  if (!reportId) {
-    return replyFn("❌ link inválido");
-  }
+  const reportId = match[1];
 
   try {
     const token = await getWCLToken();
 
-    // ===============================
-    // QUERY UNIVERSAL (SAFE)
-    // ===============================
     const query = `
     {
       reportData {
         report(code: "${reportId}") {
 
           fights {
-            id
             name
             kill
           }
@@ -117,22 +112,20 @@ async function processLog(link, replyFn) {
     const report = res.data?.data?.reportData?.report;
 
     if (!report) {
-      return replyFn("❌ report não encontrado ou privado");
+      return replyFn("❌ report não encontrado");
     }
 
     // ===============================
-    // FIGHTS ANALYSIS
+    // FIGHTS
     // ===============================
     const fights = report?.fights || [];
 
-    const boss =
-      fights.find(f => f.name)?.name || "Unknown Encounter";
-
+    const boss = fights.find(f => f.name)?.name || "Unknown Boss";
     const kills = fights.filter(f => f.kill).length;
     const wipes = fights.length - kills;
 
     // ===============================
-    // DPS ENGINE (ROBUSTO)
+    // DPS PARSER
     // ===============================
     const table = report?.table;
 
@@ -151,68 +144,87 @@ async function processLog(link, replyFn) {
       .filter(p => p.name !== "Unknown" && p.total > 0)
       .sort((a, b) => b.total - a.total);
 
-    // ===============================
-    // SMART FALLBACK ENGINE
-    // ===============================
-    let dpsBlock = "❌ DPS não disponível neste tipo de report";
-
-    if (players.length > 0) {
-      const top5 = players.slice(0, 5)
-        .map(p => `${p.name} — ${(p.total / 1000).toFixed(1)}k DPS`)
-        .join("\n");
-
-      const best = players[0];
-      const avg =
-        players.reduce((a, b) => a + b.total, 0) / players.length;
-
-      dpsBlock =
-        `💥 TOP DPS:\n${top5}\n\n` +
-        `🔥 Melhor: ${best.name}\n` +
-        `📊 Média: ${(avg / 1000).toFixed(1)}k`;
+    // fallback
+    if (players.length === 0) {
+      return replyFn("❌ esse log não expõe DPS via API");
     }
 
-    // ===============================
-    // RAID STATE ENGINE
-    // ===============================
-    let state = "⚖ equilibrado";
+    const top5 = players.slice(0, 5)
+      .map(p => `${p.name} — ${(p.total / 1000).toFixed(1)}k DPS`);
 
+    const best = players[0];
+
+    const avg =
+      players.reduce((a, b) => a + b.total, 0) /
+      players.length;
+
+    let state = "⚖ equilibrado";
     if (kills === 0) state = "💀 wipe total";
     else if (wipes > kills * 2) state = "🔥 wipe crítico";
     else if (wipes < kills) state = "📈 progressão boa";
 
-    // ===============================
-    // FINAL RESPONSE (NEVER FAILS)
-    // ===============================
     const embed = new EmbedBuilder()
-      .setTitle("👑 MINI WARCRAFT LOGS ANALYSIS")
+      .setTitle("👑 RAID ANALYSIS FULL MODE")
       .setColor(0x00ff99)
       .addFields(
-        { name: "⚔ Boss / Encounter", value: boss, inline: false },
+        { name: "⚔ Boss", value: boss, inline: true },
         { name: "🔥 Kills", value: String(kills), inline: true },
         { name: "💀 Wipes", value: String(wipes), inline: true },
-        { name: "🧠 Estado", value: state, inline: false },
-        { name: "📊 DPS ANALYSIS", value: dpsBlock, inline: false },
-        { name: "📌 Players Detectados", value: String(players.length), inline: true }
+
+        { name: "🧠 Estado", value: state },
+
+        { name: "💥 TOP DPS", value: top5.join("\n") },
+
+        {
+          name: "📊 Stats",
+          value:
+            `🔥 Melhor: ${best?.name || "?"}\n` +
+            `📈 Média: ${(avg / 1000).toFixed(1)}k\n` +
+            `👥 Players: ${players.length}`
+        }
       )
-      .setFooter({ text: "Pro Mode • Smart Analysis Engine" });
+      .setFooter({ text: "Full Mode • Discord + Link Support" });
 
     return replyFn({ embeds: [embed] });
 
   } catch (err) {
     console.error(err);
-    return replyFn("❌ erro interno na análise do log");
+    return replyFn("❌ erro ao analisar log");
   }
 }
 
 // ===============================
-// INTERACTION HANDLER (NO TIMEOUT ISSUES)
+// SLASH COMMAND
 // ===============================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
 
   if (i.commandName === "log") {
-    await i.deferReply(); // 🔥 evita "app not responding"
+    await i.deferReply();
     return processLog(i.options.getString("link"), (m) => i.editReply(m));
+  }
+});
+
+// ===============================
+// MESSAGE SUPPORT (!log + link puro)
+// ===============================
+client.on("messageCreate", async (m) => {
+  if (m.author.bot) return;
+
+  const content = m.content;
+
+  const match = content.match(
+    /https:\/\/www\.warcraftlogs\.com\/reports\/[a-zA-Z0-9]+(\?fight=\d+)?/
+  );
+
+  if (!match) return;
+
+  try {
+    await m.reply("📊 analisando log...");
+    return processLog(match[0], (r) => m.reply(r));
+  } catch (e) {
+    console.error(e);
+    return m.reply("❌ erro ao analisar log");
   }
 });
 
