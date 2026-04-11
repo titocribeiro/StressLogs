@@ -74,7 +74,7 @@ client.once("ready", () => {
 });
 
 // ===============================
-// PROCESS LOG (VERSÃO ESTÁVEL REAL)
+// PROCESS LOG (VERSÃO LIMPA E FUNCIONAL)
 // ===============================
 async function processLog(link, replyFn) {
   const match = link.match(/reports\/([a-zA-Z0-9]+)/);
@@ -87,7 +87,7 @@ async function processLog(link, replyFn) {
   try {
     const token = await getWCLToken();
 
-    // 🔥 QUERY ESTÁVEL (SEM fight filter, SEM rankings)
+    // 🔥 QUERY SIMPLES E ESTÁVEL
     const query = `
     {
       reportData {
@@ -123,13 +123,11 @@ async function processLog(link, replyFn) {
     const wipes = fights.length - kills;
 
     // ===============================
-    // 💥 DPS PARSER ULTRA ESTÁVEL
+    // 💥 DPS PARSER SIMPLES (ESTÁVEL)
     // ===============================
-    const table = report?.table;
-
     const entries =
-      table?.data?.entries ||
-      table?.data?.data?.entries ||
+      report?.table?.data?.entries ||
+      report?.table?.data?.data?.entries ||
       [];
 
     const players = entries
@@ -140,11 +138,9 @@ async function processLog(link, replyFn) {
       .filter(p => p.name !== "Unknown" && p.total > 0)
       .sort((a, b) => b.total - a.total);
 
-    // ===============================
-    // FALLBACK REAL (IMPORTANTE)
-    // ===============================
+    // fallback real
     if (players.length === 0) {
-      return replyFn("❌ esse log não retornou DPS (WCL variou estrutura desse report)");
+      return replyFn("❌ esse log não retornou DPS (limitação do report no Warcraft Logs)");
     }
 
     const top5 = players.slice(0, 5)
@@ -158,7 +154,7 @@ async function processLog(link, replyFn) {
       players.length;
 
     // ===============================
-    // RAID STATE
+    // STATE
     // ===============================
     let state = "⚖ equilibrado";
     if (wipes > kills * 2) state = "🔥 wipe crítico";
@@ -169,7 +165,7 @@ async function processLog(link, replyFn) {
     // EMBED FINAL
     // ===============================
     const embed = new EmbedBuilder()
-      .setTitle("👑 RAID ANALYSIS FINAL STABLE")
+      .setTitle("👑 RAID ANALYSIS FINAL (STABLE)")
       .setColor(0x00ff99)
       .addFields(
         { name: "⚔ Boss", value: boss, inline: true },
@@ -192,7 +188,7 @@ async function processLog(link, replyFn) {
             `📈 DPS médio: ${(avg / 1000).toFixed(1)}k`
         }
       )
-      .setFooter({ text: "Discord Only • Stable Version" });
+      .setFooter({ text: "Discord Only • Stable Reset Version" });
 
     return replyFn({ embeds: [embed] });
 
@@ -203,7 +199,7 @@ async function processLog(link, replyFn) {
 }
 
 // ===============================
-// INTERACTION
+// INTERACTION HANDLER
 // ===============================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
