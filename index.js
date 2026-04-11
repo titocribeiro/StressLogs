@@ -1,4 +1,4 @@
-const { Client, GatewayIntentBits } = require("discord.js");
+const { Client, GatewayIntentBits, EmbedBuilder } = require("discord.js");
 const axios = require("axios");
 
 const client = new Client({
@@ -67,18 +67,21 @@ client.once("ready", () => {
 });
 
 // ===============================
-// COMANDO !log
+// COMANDO !log OU LINK DIRETO
 // ===============================
 client.on("messageCreate", async (message) => {
   if (message.author.bot) return;
 
-  if (!message.content.startsWith("!log")) return;
+  const content = message.content.trim();
 
-  const link = message.content.replace("!log", "").trim();
+  const isCommand = content.startsWith("!log");
+  const isLink = content.includes("warcraftlogs.com/reports/");
 
-  if (!link) {
-    return message.reply("manda o link do Warcraft Logs 🙂");
-  }
+  if (!isCommand && !isLink) return;
+
+  const link = isCommand
+    ? content.replace("!log", "").trim()
+    : content.trim();
 
   const match = link.match(/warcraftlogs\.com\/reports\/([a-zA-Z0-9]+)/);
 
@@ -125,17 +128,18 @@ client.on("messageCreate", async (message) => {
       });
     }
 
-    message.reply(
-`📊 **RESUMO DO LOG**
+    const embed = new EmbedBuilder()
+      .setTitle("📊 Resumo do Log")
+      .setColor(0x00ff99)
+      .addFields(
+        { name: "🔥 Kills", value: String(kills), inline: true },
+        { name: "💀 Wipes", value: String(wipes), inline: true },
+        { name: "⚔️ Fights", value: String(fights.length), inline: true },
+        { name: "💥 Top DPS", value: dpsText || "Sem dados 😢" }
+      )
+      .setFooter({ text: "StressLogs • Warcraft Logs Parser" });
 
-🔥 Kills: ${kills}
-💀 Wipes: ${wipes}
-⚔️ Fights: ${fights.length}
-
-💥 **TOP DPS**
-${dpsText}
-`
-    );
+    message.reply({ embeds: [embed] });
 
   } catch (err) {
     console.error(err);
