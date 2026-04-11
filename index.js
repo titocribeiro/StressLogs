@@ -78,10 +78,14 @@ async function processLog(link, reply) {
   const reportId = link.match(/reports\/([a-zA-Z0-9]+)/)?.[1];
   if (!reportId) return reply({ content: "❌ link inválido" });
 
+  // Tenta extrair o fight ID do link (?fight=2 ou &fight=last)
+  const fightMatch = link.match(/[?&]fight=(\d+|last)/);
+  let fightId = fightMatch ? fightMatch[1] : null;
+
   try {
     const token = await getWCLToken();
 
-    // Passo 1: buscar metadados e playerDetails (para pegar as specs e ROLES reais)
+    // Passo 1: buscar metadados, playerDetails e fights
     const metaQuery = `
     {
       reportData {
@@ -89,8 +93,12 @@ async function processLog(link, reply) {
           startTime
           endTime
           fights {
+            id
             name
             kill
+            startTime
+            endTime
+            fightPercentage
           }
           playerDetails(startTime: 0, endTime: 9999999999)
         }
@@ -106,9 +114,34 @@ async function processLog(link, reply) {
     const reportMeta = metaRes.data?.data?.reportData?.report;
     if (!reportMeta) return reply({ content: "❌ report não encontrado" });
 
-    // Mapear specs e roles dos jogadores de forma robusta
+    // Determinar qual luta analisar
+    const fights = reportMeta.fights || [];
+    let targetFight = null;
+    if (fightId === "last") {
+      targetFight = fights[fights.length - 1];
+    } else if (fightId) {
+      targetFight = fights.find(f => f.id == fightId);
+    } else {
+      // Se não especificou, pega a última luta por padrão (geralmente a mais relevante)
+      targetFight = fights[fights.length - 1];
+    }
+
+    if (!targetFight) return reply({ content: "❌ luta não encontrada no log" });
+
+    const boss = targetFight.name;
+    const isKill = targetFight.kill;
+    const fightDurationMs = targetFight.endTime - targetFight.startTime;
+    const durationMin = Math.floor(fightDurationMs / 60000);
+    const durationSec = Math.floor((fightDurationMs % 60000) / 1000);
+    const durationStr = `${durationMin}m ${durationSec}s`;
+    const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
+
+    // Mapear specs e roles dos jogadores
     const playerInfoMap = {};
     const details = reportMeta.playerDetails?.data?.playerDetails;
+    let totalIlvl = 0;
+    let playerCount = 0;
+
     if (details) {
       ["dps", "healers", "tanks"].forEach(role => {
         if (details[role] && Array.isArray(details[role])) {
@@ -121,31 +154,30 @@ async function processLog(link, reply) {
             playerInfoMap[p.name] = {
               className: p.type,
               spec: specName,
-              role: role // 'dps', 'healers' ou 'tanks'
+              role: role,
+              minIlvl: p.minItemLevel || 0
             };
+            if (p.minItemLevel) {
+              totalIlvl += p.minItemLevel;
+              playerCount++;
+            }
           });
         }
       });
     }
 
-    const fights = reportMeta.fights || [];
-    const boss = fights[0]?.name || "Unknown Boss";
-    const kills = fights.filter(f => f.kill).length;
-    const wipes = fights.length - kills;
+    const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
-    const reportStart = reportMeta.startTime;
-    const reportEnd = reportMeta.endTime;
-    const startTime = 0;
-    const endTime = reportEnd - reportStart;
-
-    // Passo 2: buscar tabelas de performance
+    // Passo 2: buscar tabelas de performance da luta específica
     const tableQuery = `
     {
       reportData {
         report(code: "${reportId}") {
-          table(dataType: DamageDone, startTime: ${startTime}, endTime: ${endTime})
-          tableHealing: table(dataType: Healing, startTime: ${startTime}, endTime: ${endTime})
-          tableTank: table(dataType: DamageTaken, startTime: ${startTime}, endTime: ${endTime})
+          table(dataType: DamageDone, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
+          tableHealing: table(dataType: Healing, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
+          tableTank: table(dataType: DamageTaken, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
+          tableDeaths: table(dataType: Deaths, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
+          tableBuffs: table(dataType: Buffs, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
         }
       }
     }`;
@@ -159,8 +191,22 @@ async function processLog(link, reply) {
     const report = tableRes.data?.data?.reportData?.report;
     if (!report) return reply({ content: "❌ erro ao buscar tabelas" });
 
+    // Extrair primeira morte
+    const deaths = report.tableDeaths?.data?.entries || [];
+    let firstDeathStr = "Ninguém morreu! 🎉";
+    if (deaths.length > 0) {
+      const first = deaths[0];
+      firstDeathStr = `💀 **${first.name}** (${first.ability?.name || "Dano desconhecido"})`;
+    }
+
+    // Extrair consumíveis (Flasks e Food)
+    // Nota: Simplificado para mostrar quem ESTÁ com buff
+    const buffs = report.tableBuffs?.data?.entries || [];
+    const hasFlask = buffs.filter(b => b.name.toLowerCase().includes("flask") || b.name.toLowerCase().includes("phial")).length;
+    const hasFood = buffs.filter(b => b.name.toLowerCase().includes("well fed") || b.name.toLowerCase().includes("food")).length;
+
     // ===============================
-    // GENERIC EXTRACTOR COM FILTRO DE ROLE
+    // GENERIC EXTRACTOR
     // ===============================
     const extract = (table, targetRole) => {
       const raw = table?.data;
@@ -188,7 +234,6 @@ async function processLog(link, reply) {
             role: role
           };
         })
-        // FILTRO: Só entra na lista se a role do log bater com a lista que estamos montando
         .filter(p => p.name !== "Unknown" && p.total > 0 && p.role === targetRole)
         .sort((a, b) => b.total - a.total);
     };
@@ -199,13 +244,11 @@ async function processLog(link, reply) {
 
     const format = (arr) => {
       if (!arr.length) return "❌ sem dados";
-      
       let result = "";
       for (let i = 0; i < arr.length; i++) {
         const p = arr[i];
         const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
         const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${(p.total / 1000).toFixed(1)}k**\n`;
-        
         if ((result + line).length > 1000) {
           result += "... e mais jogadores";
           break;
@@ -221,11 +264,14 @@ async function processLog(link, reply) {
     const embed = new EmbedBuilder()
       .setTitle(`👑 FULL RAID ROSTER — ${boss}`)
       .setURL(link)
-      .setColor("#FFD700")
+      .setColor(isKill ? "#00FF00" : "#FF0000") // Verde se kill, Vermelho se wipe
       .addFields(
-        { name: "⚔ Boss", value: boss, inline: true },
-        { name: "🔥 Kills", value: `${kills}`, inline: true },
-        { name: "💀 Wipes", value: `${wipes}`, inline: true },
+        { name: "⚔ Boss", value: `${boss} (${isKill ? "KILL" : "WIPE"})`, inline: true },
+        { name: "⏱ Duração", value: durationStr, inline: true },
+        { name: "📉 Status", value: isKill ? "✅ Morto" : `❌ ${wipePercent}`, inline: true },
+        { name: "🎒 Média ilvl", value: `${avgIlvl}`, inline: true },
+        { name: "💀 Primeira Morte", value: firstDeathStr, inline: true },
+        { name: "🧪 Consumíveis", value: `🧪 Flasks: ${hasFlask} | 🍗 Food: ${hasFood}`, inline: true },
         { name: "💥 DPS", value: format(dps) },
         { name: "💚 HEALERS", value: format(heal) },
         { name: "🛡 TANKS", value: format(tank) }
