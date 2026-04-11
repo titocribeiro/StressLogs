@@ -169,7 +169,7 @@ async function processLog(link, reply) {
 
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
-    // Passo 2: buscar tabelas de performance e AURAS (para consumíveis)
+    // Passo 2: buscar tabelas de performance
     const tableQuery = `
     {
       reportData {
@@ -178,8 +178,7 @@ async function processLog(link, reply) {
           tableHealing: table(dataType: Healing, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
           tableTank: table(dataType: DamageTaken, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
           tableDeaths: table(dataType: Deaths, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
-          # Usamos auras para pegar buffs que já estavam ativos no início
-          tableAuras: table(dataType: Buffs, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
+          tableBuffs: table(dataType: Buffs, startTime: ${targetFight.startTime}, endTime: ${targetFight.endTime})
         }
       }
     }`;
@@ -201,25 +200,37 @@ async function processLog(link, reply) {
     }
 
     // ===============================
-    // CONTAGEM DE CONSUMÍVEIS (v19 - Lógica de Auras)
+    // CONTAGEM DE CONSUMÍVEIS (v20 - Lógica Invertida)
     // ===============================
-    const auras = report.tableAuras?.data?.entries || [];
+    const buffsEntries = report.tableBuffs?.data?.entries || [];
     const playersWithFlask = new Set();
     const playersWithFood = new Set();
 
-    auras.forEach(p => {
-      if (p.abilities && Array.isArray(p.abilities)) {
-        p.abilities.forEach(ability => {
-          const name = ability.name.toLowerCase();
-          // Verifica se o buff é um Flask/Phial ou Food
-          // Incluímos termos em inglês e português para garantir
-          if (name.includes("flask") || name.includes("phial") || name.includes("frasco") || name.includes("fíala")) {
-            playersWithFlask.add(p.name);
-          }
-          if (name.includes("well fed") || name.includes("food") || name.includes("comida") || name.includes("alimentado") || name.includes("saciedade")) {
-            playersWithFood.add(p.name);
-          }
-        });
+    buffsEntries.forEach(buff => {
+      const buffName = buff.name.toLowerCase();
+      const isFlask = buffName.includes("flask") || buffName.includes("phial") || buffName.includes("frasco") || buffName.includes("fíala");
+      const isFood = buffName.includes("well fed") || buffName.includes("food") || buffName.includes("comida") || buffName.includes("alimentado") || buffName.includes("saciedade");
+
+      if (isFlask || isFood) {
+        // Na API v2, se o buff for por habilidade, os jogadores estão em 'bands' ou 'targets'
+        if (buff.bands && Array.isArray(buff.bands)) {
+          buff.bands.forEach(band => {
+            // Se houver uma lista de alvos (targets) dentro da banda
+            if (band.targets && Array.isArray(band.targets)) {
+              band.targets.forEach(target => {
+                if (isFlask) playersWithFlask.add(target.name);
+                if (isFood) playersWithFood.add(target.name);
+              });
+            }
+          });
+        }
+        // Fallback: em algumas versões da API, os jogadores estão direto em 'targets'
+        if (buff.targets && Array.isArray(buff.targets)) {
+          buff.targets.forEach(target => {
+            if (isFlask) playersWithFlask.add(target.name);
+            if (isFood) playersWithFood.add(target.name);
+          });
+        }
       }
     });
 
