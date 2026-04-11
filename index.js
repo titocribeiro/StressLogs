@@ -49,15 +49,7 @@ const commands = [
       opt.setName("link")
         .setDescription("Link do report")
         .setRequired(true)
-    ),
-
-  new SlashCommandBuilder()
-    .setName("ranking")
-    .setDescription("Ranking simples da guilda"),
-
-  new SlashCommandBuilder()
-    .setName("lastlogs")
-    .setDescription("Últimos logs analisados")
+    )
 ].map(c => c.toJSON());
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
@@ -82,7 +74,7 @@ client.once("ready", () => {
 });
 
 // ===============================
-// PROCESS LOG (FINAL STABLE)
+// PROCESS LOG (VERSÃO ESTÁVEL REAL)
 // ===============================
 async function processLog(link, replyFn) {
   const match = link.match(/reports\/([a-zA-Z0-9]+)/);
@@ -95,10 +87,12 @@ async function processLog(link, replyFn) {
   try {
     const token = await getWCLToken();
 
+    // 🔥 QUERY ESTÁVEL (SEM fight filter, SEM rankings)
     const query = `
     {
       reportData {
         report(code: "${reportId}") {
+
           fights {
             name
             kill
@@ -129,17 +123,16 @@ async function processLog(link, replyFn) {
     const wipes = fights.length - kills;
 
     // ===============================
-    // 💥 DPS PARSER ESTÁVEL
+    // 💥 DPS PARSER ULTRA ESTÁVEL
     // ===============================
     const table = report?.table;
 
-    const raw =
+    const entries =
       table?.data?.entries ||
       table?.data?.data?.entries ||
-      table?.tableData?.entries ||
       [];
 
-    const players = raw
+    const players = entries
       .map(p => ({
         name: p.name || p.character || p.label || "Unknown",
         total: p.total || p.amount || p.dps || p.value || 0
@@ -147,8 +140,11 @@ async function processLog(link, replyFn) {
       .filter(p => p.name !== "Unknown" && p.total > 0)
       .sort((a, b) => b.total - a.total);
 
+    // ===============================
+    // FALLBACK REAL (IMPORTANTE)
+    // ===============================
     if (players.length === 0) {
-      return replyFn("❌ esse log não retornou DPS (variação da API do Warcraft Logs)");
+      return replyFn("❌ esse log não retornou DPS (WCL variou estrutura desse report)");
     }
 
     const top5 = players.slice(0, 5)
@@ -207,7 +203,7 @@ async function processLog(link, replyFn) {
 }
 
 // ===============================
-// INTERACTIONS
+// INTERACTION
 // ===============================
 client.on("interactionCreate", async (i) => {
   if (!i.isChatInputCommand()) return;
@@ -215,29 +211,6 @@ client.on("interactionCreate", async (i) => {
   if (i.commandName === "log") {
     await i.reply("📊 processando...");
     return processLog(i.options.getString("link"), (m) => i.editReply(m));
-  }
-
-  if (i.commandName === "ranking") {
-    return i.reply("👑 ranking simples (ainda em memória local)");
-  }
-
-  if (i.commandName === "lastlogs") {
-    return i.reply("📜 logs simples (memória local)");
-  }
-});
-
-// ===============================
-// MESSAGE SUPPORT
-// ===============================
-client.on("messageCreate", async (m) => {
-  if (m.author.bot) return;
-
-  if (m.content.startsWith("!log")) {
-    return processLog(m.content.replace("!log", ""), (r) => m.reply(r));
-  }
-
-  if (m.content.includes("warcraftlogs.com/reports/")) {
-    return processLog(m.content, (r) => m.reply(r));
   }
 });
 
