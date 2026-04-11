@@ -140,7 +140,7 @@ async function processLog(link, reply) {
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
 
-    // Lógica de cores dinâmicas (v35)
+    // Lógica de cores dinâmicas (v36 - Definitiva)
     let embedColor = "#FFFF00"; // Amarelo (Padrão)
     let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
 
