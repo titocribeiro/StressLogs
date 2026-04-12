@@ -140,7 +140,7 @@ async function processLog(link, reply) {
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
 
-    // Lógica de cores dinâmicas (v45 - Lógica Rigorosa Baseada em Estrelas)
+    // Lógica de cores dinâmicas (v46 - Lógica Rigorosa Baseada em Estrelas)
     let embedColor = "#FFFF00"; // Amarelo (Padrão)
     let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
 
@@ -236,6 +236,7 @@ async function processLog(link, reply) {
 
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
+    // v46: Função de extração com filtro de "Environment" e jogadores fantasmas
     const extract = (data) => {
       const entries = data?.entries || [];
 
@@ -259,7 +260,12 @@ async function processLog(link, reply) {
             spec: spec
           };
         })
-        .filter(p => p.name !== "Unknown" && p.total > 0)
+        .filter(p => 
+          p.name !== "Unknown" && 
+          p.name !== "Environment" && // Filtra o ambiente
+          p.className !== "Boss" && // Filtra bosses que aparecem na tabela
+          p.total > 0
+        )
         .sort((a, b) => b.total - a.total);
     };
 
@@ -273,7 +279,6 @@ async function processLog(link, reply) {
       return val.toString();
     };
 
-    // v45: Função de formatação com limites e offset para numeração
     const format = (arr, startIdx = 0, limit = 10) => {
       if (!arr.length || startIdx >= arr.length) return null;
       let result = "";
@@ -309,14 +314,12 @@ async function processLog(link, reply) {
       embed.addFields({ name: "🔑 Nv. da Pedra", value: keyLevel, inline: true });
     }
 
-    // v45: Divisão de DPS em dois campos (1-10 e 11-20)
     const dps1 = format(dps, 0, 10);
     const dps2 = format(dps, 10, 10);
     const healList = format(heal, 0, 10);
     const tankList = format(tank, 0, 10);
 
     if (dps1) embed.addFields({ name: "💥 DPS", value: dps1 });
-    // Título invisível (\u200B) para o segundo campo de DPS
     if (dps2) embed.addFields({ name: "\u200B", value: dps2 });
     
     if (healList) embed.addFields({ name: "💚 HEALERS", value: healList });
