@@ -140,7 +140,7 @@ async function processLog(link, reply) {
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
 
-    // Lógica de cores dinâmicas (v40/v41/v42 - Lógica Rigorosa Baseada em Estrelas)
+    // Lógica de cores dinâmicas (v45 - Lógica Rigorosa Baseada em Estrelas)
     let embedColor = "#FFFF00"; // Amarelo (Padrão)
     let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
 
@@ -236,7 +236,7 @@ async function processLog(link, reply) {
 
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
-    const extract = (data, targetRole) => {
+    const extract = (data) => {
       const entries = data?.entries || [];
 
       return entries
@@ -244,7 +244,6 @@ async function processLog(link, reply) {
           const info = playerInfoMap[p.name];
           const className = info ? info.className : (p.type || "Unknown");
           let spec = info ? info.spec : "Unknown";
-          const role = info ? info.role : "Unknown";
           
           if ((spec === "Unknown" || spec === className) && p.icon) {
             const iconParts = p.icon.split("-");
@@ -257,17 +256,16 @@ async function processLog(link, reply) {
             name: p.name || "Unknown",
             total: p.total || 0,
             className: className,
-            spec: spec,
-            role: role
+            spec: spec
           };
         })
-        .filter(p => p.name !== "Unknown" && p.total > 0 && p.role === targetRole)
+        .filter(p => p.name !== "Unknown" && p.total > 0)
         .sort((a, b) => b.total - a.total);
     };
 
-    const dps = extract(tableDamage, "dps");
-    const heal = extract(tableHealing, "healers");
-    const tank = extract(tableTank, "tanks");
+    const dps = extract(tableDamage);
+    const heal = extract(tableHealing);
+    const tank = extract(tableTank);
 
     const formatValue = (val) => {
       if (val >= 1000000) return (val / 1000000).toFixed(1) + "M";
@@ -275,17 +273,18 @@ async function processLog(link, reply) {
       return val.toString();
     };
 
-    // v42: Função de formatação sem limite de Top 10
-    const format = (arr) => {
-      if (!arr.length) return "❌ sem dados";
+    // v45: Função de formatação com limites e offset para numeração
+    const format = (arr, startIdx = 0, limit = 10) => {
+      if (!arr.length || startIdx >= arr.length) return null;
       let result = "";
-      for (let i = 0; i < arr.length; i++) {
+      const endIdx = Math.min(arr.length, startIdx + limit);
+      
+      for (let i = startIdx; i < endIdx; i++) {
         const p = arr[i];
         const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
         const perSec = (p.total / durationSecTotal);
         const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${formatValue(p.total)}** (${formatValue(perSec)})\n`;
         
-        // Trava técnica de 1024 caracteres por campo do Discord
         if ((result + line).length > 1000) {
           result += "... e mais jogadores";
           break;
@@ -310,12 +309,20 @@ async function processLog(link, reply) {
       embed.addFields({ name: "🔑 Nv. da Pedra", value: keyLevel, inline: true });
     }
 
-    embed.addFields(
-      { name: "💥 DPS", value: format(dps) },
-      { name: "💚 HEALERS", value: format(heal) },
-      { name: "🛡 TANKS", value: format(tank) }
-    )
-    .setFooter({ text: "StressLogs Bot • Warcraft Logs API v2" })
+    // v45: Divisão de DPS em dois campos (1-10 e 11-20)
+    const dps1 = format(dps, 0, 10);
+    const dps2 = format(dps, 10, 10);
+    const healList = format(heal, 0, 10);
+    const tankList = format(tank, 0, 10);
+
+    if (dps1) embed.addFields({ name: "💥 DPS", value: dps1 });
+    // Título invisível (\u200B) para o segundo campo de DPS
+    if (dps2) embed.addFields({ name: "\u200B", value: dps2 });
+    
+    if (healList) embed.addFields({ name: "💚 HEALERS", value: healList });
+    if (tankList) embed.addFields({ name: "🛡 TANKS", value: tankList });
+
+    embed.setFooter({ text: "StressLogs Bot • Warcraft Logs API v2" })
     .setTimestamp();
 
     return reply({ embeds: [embed] });
