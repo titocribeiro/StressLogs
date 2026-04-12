@@ -140,29 +140,24 @@ async function processLog(link, reply) {
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
 
-    // Lógica de cores dinâmicas (v40 - Lógica Rigorosa Baseada em Estrelas)
+    // Lógica de cores dinâmicas (v40/v41 - Lógica Rigorosa Baseada em Estrelas)
     let embedColor = "#FFFF00"; // Amarelo (Padrão)
     let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
 
     if (keyLevel) {
-      // É uma Dungeon Mythic+
       if (!isKill) {
-        embedColor = "#FF0000"; // Vermelho (Wipe/Não concluída)
+        embedColor = "#FF0000";
         statusText = `❌ ${wipePercent}`;
       } else {
-        // Lógica Rigorosa: Só é verde se tiver bônus (estrelas)
-        // Se keystoneBonus for maior que 0 (1, 2 ou 3 estrelas)
         if (targetFight.keystoneBonus && targetFight.keystoneBonus > 0) {
-          embedColor = "#00FF00"; // Verde (No tempo)
+          embedColor = "#00FF00";
           statusText = "✅ Concluída no Tempo";
         } else {
-          // Se keystoneBonus for 0 ou null, mas isKill é true, é fora do tempo
-          embedColor = "#FFFF00"; // Amarelo (Fora do tempo)
+          embedColor = "#FFFF00";
           statusText = "⚠️ Concluída fora do Tempo";
         }
       }
     } else {
-      // É uma Raid
       embedColor = isKill ? "#00FF00" : "#FF0000";
       statusText = isKill ? "✅ Morto" : `❌ ${wipePercent}`;
     }
@@ -181,23 +176,22 @@ async function processLog(link, reply) {
               const firstSpec = p.specs[0];
               specName = typeof firstSpec === 'object' ? (firstSpec.spec || firstSpec.name || "Unknown") : firstSpec;
             }
+            
+            // v41: Usar minItemLevel como base, mas priorizar o valor mais alto se disponível
+            // A API do WCL às vezes retorna minItemLevel e maxItemLevel
+            const currentIlvl = p.minItemLevel || 0;
+
             playerInfoMap[p.name] = {
               id: p.id,
               className: p.type,
               spec: specName,
               role: role,
-              minIlvl: p.minItemLevel || 0
+              ilvl: currentIlvl
             };
-            if (p.minItemLevel) {
-              totalIlvl += p.minItemLevel;
-              playerCount++;
-            }
           });
         }
       });
     }
-
-    const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
     const fetchTable = async (dataType) => {
       const query = `
@@ -224,6 +218,27 @@ async function processLog(link, reply) {
     const tableDamage = await fetchTable("DamageDone");
     const tableHealing = await fetchTable("Healing");
     const tableTank = await fetchTable("DamageTaken");
+
+    // v41: Cálculo de ilvl baseado nos jogadores que REALMENTE participaram da luta
+    const seenPlayers = new Set();
+    const allEntries = [
+      ...(tableDamage?.entries || []),
+      ...(tableHealing?.entries || []),
+      ...(tableTank?.entries || [])
+    ];
+
+    allEntries.forEach(entry => {
+      if (entry.name && !seenPlayers.has(entry.name)) {
+        const info = playerInfoMap[entry.name];
+        if (info && info.ilvl > 0) {
+          totalIlvl += info.ilvl;
+          playerCount++;
+          seenPlayers.add(entry.name);
+        }
+      }
+    });
+
+    const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
     const extract = (data, targetRole) => {
       const entries = data?.entries || [];
@@ -293,7 +308,6 @@ async function processLog(link, reply) {
         { name: "🎒 Média ilvl", value: `${avgIlvl}`, inline: true }
       );
 
-    // Adiciona o campo de Nível da Pedra apenas se existir
     if (keyLevel) {
       embed.addFields({ name: "🔑 Nv. da Pedra", value: keyLevel, inline: true });
     }
