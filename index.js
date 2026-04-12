@@ -140,7 +140,7 @@ async function processLog(link, reply) {
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
 
-    // Lógica de cores dinâmicas (v40/v41 - Lógica Rigorosa Baseada em Estrelas)
+    // Lógica de cores dinâmicas (v40/v41/v42 - Lógica Rigorosa Baseada em Estrelas)
     let embedColor = "#FFFF00"; // Amarelo (Padrão)
     let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
 
@@ -164,9 +164,7 @@ async function processLog(link, reply) {
 
     const playerInfoMap = {};
     const details = reportMeta.playerDetails?.data?.playerDetails;
-    let totalIlvl = 0;
-    let playerCount = 0;
-
+    
     if (details) {
       ["dps", "healers", "tanks"].forEach(role => {
         if (details[role] && Array.isArray(details[role])) {
@@ -177,16 +175,12 @@ async function processLog(link, reply) {
               specName = typeof firstSpec === 'object' ? (firstSpec.spec || firstSpec.name || "Unknown") : firstSpec;
             }
             
-            // v41: Usar minItemLevel como base, mas priorizar o valor mais alto se disponível
-            // A API do WCL às vezes retorna minItemLevel e maxItemLevel
-            const currentIlvl = p.minItemLevel || 0;
-
             playerInfoMap[p.name] = {
               id: p.id,
               className: p.type,
               spec: specName,
               role: role,
-              ilvl: currentIlvl
+              ilvl: p.minItemLevel || 0
             };
           });
         }
@@ -219,7 +213,9 @@ async function processLog(link, reply) {
     const tableHealing = await fetchTable("Healing");
     const tableTank = await fetchTable("DamageTaken");
 
-    // v41: Cálculo de ilvl baseado nos jogadores que REALMENTE participaram da luta
+    // Cálculo de ilvl baseado nos jogadores que REALMENTE participaram da luta
+    let totalIlvl = 0;
+    let playerCount = 0;
     const seenPlayers = new Set();
     const allEntries = [
       ...(tableDamage?.entries || []),
@@ -279,6 +275,7 @@ async function processLog(link, reply) {
       return val.toString();
     };
 
+    // v42: Função de formatação sem limite de Top 10
     const format = (arr) => {
       if (!arr.length) return "❌ sem dados";
       let result = "";
@@ -288,6 +285,7 @@ async function processLog(link, reply) {
         const perSec = (p.total / durationSecTotal);
         const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${formatValue(p.total)}** (${formatValue(perSec)})\n`;
         
+        // Trava técnica de 1024 caracteres por campo do Discord
         if ((result + line).length > 1000) {
           result += "... e mais jogadores";
           break;
