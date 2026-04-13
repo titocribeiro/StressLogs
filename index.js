@@ -140,7 +140,7 @@ async function processLog(link, reply) {
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
 
-    // Lógica de cores dinâmicas (v47 - Lógica Rigorosa Baseada em Estrelas)
+    // Lógica de cores dinâmicas (v48 - Lógica Rigorosa Baseada em Estrelas)
     let embedColor = "#FFFF00"; // Amarelo (Padrão)
     let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
 
@@ -212,6 +212,14 @@ async function processLog(link, reply) {
     const tableDamage = await fetchTable("DamageDone");
     const tableHealing = await fetchTable("Healing");
     const tableTank = await fetchTable("DamageTaken");
+    
+    // v48: Tabelas extras para Mythic+
+    let tableInterrupts = null;
+    let tableDeaths = null;
+    if (keyLevel) {
+      tableInterrupts = await fetchTable("Interrupts");
+      tableDeaths = await fetchTable("Deaths");
+    }
 
     // Cálculo de ilvl baseado nos jogadores que REALMENTE participaram da luta
     let totalIlvl = 0;
@@ -236,7 +244,7 @@ async function processLog(link, reply) {
 
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
-    // v47: Função de extração com filtro de "Environment" e jogadores fantasmas
+    // v48: Função de extração com filtro de "Environment" e jogadores fantasmas
     const extract = (data) => {
       const entries = data?.entries || [];
 
@@ -272,6 +280,12 @@ async function processLog(link, reply) {
     const dps = extract(tableDamage);
     const heal = extract(tableHealing);
     const tank = extract(tableTank);
+    
+    // v48: Extração de Interrupts para Mythic+
+    let interrupts = [];
+    if (keyLevel && tableInterrupts) {
+      interrupts = extract(tableInterrupts);
+    }
 
     const formatValue = (val) => {
       if (val >= 1000000) return (val / 1000000).toFixed(1) + "M";
@@ -279,7 +293,7 @@ async function processLog(link, reply) {
       return val.toString();
     };
 
-    const format = (arr, startIdx = 0, limit = 10) => {
+    const format = (arr, startIdx = 0, limit = 10, isInterrupt = false) => {
       if (!arr.length || startIdx >= arr.length) return null;
       let result = "";
       const endIdx = Math.min(arr.length, startIdx + limit);
@@ -287,8 +301,14 @@ async function processLog(link, reply) {
       for (let i = startIdx; i < endIdx; i++) {
         const p = arr[i];
         const specDisplay = (p.spec && p.spec !== "Unknown" && p.spec !== p.className) ? p.spec : "N/A";
-        const perSec = (p.total / durationSecTotal);
-        const line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${formatValue(p.total)}** (${formatValue(perSec)})\n`;
+        
+        let line = "";
+        if (isInterrupt) {
+          line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${p.total}** cortes\n`;
+        } else {
+          const perSec = (p.total / durationSecTotal);
+          line = `**${i + 1}.** ${p.name} (${p.className} - ${specDisplay}) — **${formatValue(p.total)}** (${formatValue(perSec)})\n`;
+        }
         
         if ((result + line).length > 1000) {
           result += "... e mais jogadores";
@@ -312,9 +332,13 @@ async function processLog(link, reply) {
 
     if (keyLevel) {
       embed.addFields({ name: "🔑 Nv. da Pedra", value: keyLevel, inline: true });
+      
+      // v48: Contador de Mortes no cabeçalho para Mythic+
+      const deathCount = tableDeaths?.entries?.length || 0;
+      embed.addFields({ name: "💀 Mortes", value: `${deathCount}`, inline: true });
     }
 
-    // v47: Divisão de DPS em dois campos e novos títulos amigáveis
+    // v48: Divisão de DPS em dois campos e novos títulos amigáveis
     const dps1 = format(dps, 0, 10);
     const dps2 = format(dps, 10, 10);
     const healList = format(heal, 0, 10);
@@ -325,6 +349,12 @@ async function processLog(link, reply) {
     
     if (healList) embed.addFields({ name: "💚 CURA REALIZADA", value: healList });
     if (tankList) embed.addFields({ name: "🛡️ DANO RECEBIDO", value: tankList });
+    
+    // v48: Seção de Interrupts exclusiva para Mythic+
+    if (keyLevel && interrupts.length > 0) {
+      const interruptList = format(interrupts, 0, 10, true);
+      if (interruptList) embed.addFields({ name: "⚡ CORTES (INTERRUPTS)", value: interruptList });
+    }
 
     embed.setFooter({ text: "StressLogs Bot • Warcraft Logs API v2" })
     .setTimestamp();
