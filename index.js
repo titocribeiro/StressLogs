@@ -140,7 +140,7 @@ async function processLog(link, reply) {
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
 
-    // Lógica de cores dinâmicas (v50 - Lógica Rigorosa Baseada em Estrelas)
+    // Lógica de cores dinâmicas (v51 - Lógica Rigorosa Baseada em Estrelas)
     let embedColor = "#FFFF00"; // Amarelo (Padrão)
     let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
 
@@ -213,12 +213,21 @@ async function processLog(link, reply) {
     const tableHealing = await fetchTable("Healing");
     const tableTank = await fetchTable("DamageTaken");
     
-    // v50: Tabelas extras para Mythic+
+    // v51: Tabelas extras para Mythic+
     let tableInterrupts = null;
     let tableDeaths = null;
     if (keyLevel) {
       tableInterrupts = await fetchTable("Interrupts");
       tableDeaths = await fetchTable("Deaths");
+      
+      // DIAGNÓSTICO PROFUNDO INTERRUPTS
+      console.log("--- OBJETO BRUTO INTERRUPTS ---");
+      if (tableInterrupts && tableInterrupts.entries && tableInterrupts.entries.length > 0) {
+        console.log("Exemplo de Entry:", JSON.stringify(tableInterrupts.entries[0], null, 2));
+      } else {
+        console.log("Nenhuma entry encontrada na tabela de Interrupts.");
+      }
+      console.log("------------------------------");
     }
 
     // Cálculo de ilvl baseado nos jogadores que REALMENTE participaram da luta
@@ -244,7 +253,7 @@ async function processLog(link, reply) {
 
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
-    // v50: Função de extração com filtro de "Environment" e jogadores fantasmas
+    // v51: Função de extração com filtro de "Environment" e jogadores fantasmas
     const extract = (data) => {
       const entries = data?.entries || [];
 
@@ -281,18 +290,23 @@ async function processLog(link, reply) {
     const heal = extract(tableHealing);
     const tank = extract(tableTank);
     
-    // v50: Extração de Interrupts para Mythic+ com mapeamento correto
+    // v51: Extração de Interrupts para Mythic+ com mapeamento flexível
     let interrupts = [];
     if (keyLevel && tableInterrupts && tableInterrupts.entries) {
       interrupts = tableInterrupts.entries
         .map(e => {
-          const info = playerInfoMap[e.name];
+          // Tenta pegar o nome de várias formas possíveis
+          const name = e.name || e.userName || e.actorName || "Unknown";
+          const info = playerInfoMap[name];
           const className = info ? info.className : (e.type || "Unknown");
           let spec = info ? info.spec : "Unknown";
           
+          // Tenta pegar o total de várias formas possíveis
+          const total = e.total || e.count || e.interrupts || 0;
+          
           return {
-            name: e.name || "Unknown",
-            total: e.total || 0,
+            name: name,
+            total: total,
             className: className,
             spec: spec
           };
@@ -347,7 +361,7 @@ async function processLog(link, reply) {
     if (keyLevel) {
       embed.addFields({ name: "🔑 Nv. da Pedra", value: keyLevel, inline: true });
       
-      // v50: Contador de Mortes no cabeçalho para Mythic+
+      // v51: Contador de Mortes no cabeçalho para Mythic+
       const deathCount = tableDeaths?.entries?.length || 0;
       embed.addFields({ name: "💀 Mortes", value: `${deathCount}`, inline: true });
     }
@@ -363,7 +377,7 @@ async function processLog(link, reply) {
     if (healList) embed.addFields({ name: "💚 CURA REALIZADA", value: healList });
     if (tankList) embed.addFields({ name: "🛡️ DANO RECEBIDO", value: tankList });
     
-    // v50: Seção de Interrupts exclusiva para Mythic+
+    // v51: Seção de Interrupts exclusiva para Mythic+
     if (keyLevel && interrupts.length > 0) {
       const interruptList = format(interrupts, 0, 10, true);
       if (interruptList) embed.addFields({ name: "⚡ CORTES (INTERRUPTS)", value: interruptList });
