@@ -140,7 +140,7 @@ async function processLog(link, reply) {
     const wipePercent = isKill ? "0%" : `${(targetFight.fightPercentage / 100).toFixed(1)}%`;
     const keyLevel = targetFight.keystoneLevel ? `+${targetFight.keystoneLevel}` : null;
 
-    // Lógica de cores dinâmicas (v49 - Lógica Rigorosa Baseada em Estrelas)
+    // Lógica de cores dinâmicas (v50 - Lógica Rigorosa Baseada em Estrelas)
     let embedColor = "#FFFF00"; // Amarelo (Padrão)
     let statusText = isKill ? "✅ Morto/Concluído" : `❌ ${wipePercent}`;
 
@@ -213,20 +213,12 @@ async function processLog(link, reply) {
     const tableHealing = await fetchTable("Healing");
     const tableTank = await fetchTable("DamageTaken");
     
-    // v49: Tabelas extras para Mythic+
+    // v50: Tabelas extras para Mythic+
     let tableInterrupts = null;
     let tableDeaths = null;
     if (keyLevel) {
       tableInterrupts = await fetchTable("Interrupts");
       tableDeaths = await fetchTable("Deaths");
-      
-      // DIAGNÓSTICO INTERRUPTS
-      console.log("--- DIAGNÓSTICO INTERRUPTS ---");
-      console.log("Entries encontradas:", tableInterrupts?.entries?.length || 0);
-      if (tableInterrupts?.entries) {
-        tableInterrupts.entries.forEach(e => console.log(`Jogador: ${e.name}, Cortes: ${e.total}`));
-      }
-      console.log("------------------------------");
     }
 
     // Cálculo de ilvl baseado nos jogadores que REALMENTE participaram da luta
@@ -252,7 +244,7 @@ async function processLog(link, reply) {
 
     const avgIlvl = playerCount > 0 ? (totalIlvl / playerCount).toFixed(1) : "N/A";
 
-    // v49: Função de extração com filtro de "Environment" e jogadores fantasmas
+    // v50: Função de extração com filtro de "Environment" e jogadores fantasmas
     const extract = (data) => {
       const entries = data?.entries || [];
 
@@ -289,10 +281,24 @@ async function processLog(link, reply) {
     const heal = extract(tableHealing);
     const tank = extract(tableTank);
     
-    // v49: Extração de Interrupts para Mythic+
+    // v50: Extração de Interrupts para Mythic+ com mapeamento correto
     let interrupts = [];
-    if (keyLevel && tableInterrupts) {
-      interrupts = extract(tableInterrupts);
+    if (keyLevel && tableInterrupts && tableInterrupts.entries) {
+      interrupts = tableInterrupts.entries
+        .map(e => {
+          const info = playerInfoMap[e.name];
+          const className = info ? info.className : (e.type || "Unknown");
+          let spec = info ? info.spec : "Unknown";
+          
+          return {
+            name: e.name || "Unknown",
+            total: e.total || 0,
+            className: className,
+            spec: spec
+          };
+        })
+        .filter(p => p.name !== "Unknown" && p.total > 0)
+        .sort((a, b) => b.total - a.total);
     }
 
     const formatValue = (val) => {
@@ -341,7 +347,7 @@ async function processLog(link, reply) {
     if (keyLevel) {
       embed.addFields({ name: "🔑 Nv. da Pedra", value: keyLevel, inline: true });
       
-      // v49: Contador de Mortes no cabeçalho para Mythic+
+      // v50: Contador de Mortes no cabeçalho para Mythic+
       const deathCount = tableDeaths?.entries?.length || 0;
       embed.addFields({ name: "💀 Mortes", value: `${deathCount}`, inline: true });
     }
@@ -357,7 +363,7 @@ async function processLog(link, reply) {
     if (healList) embed.addFields({ name: "💚 CURA REALIZADA", value: healList });
     if (tankList) embed.addFields({ name: "🛡️ DANO RECEBIDO", value: tankList });
     
-    // v49: Seção de Interrupts exclusiva para Mythic+
+    // v50: Seção de Interrupts exclusiva para Mythic+
     if (keyLevel && interrupts.length > 0) {
       const interruptList = format(interrupts, 0, 10, true);
       if (interruptList) embed.addFields({ name: "⚡ CORTES (INTERRUPTS)", value: interruptList });
